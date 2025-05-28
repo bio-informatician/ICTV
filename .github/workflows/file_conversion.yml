@@ -1,4 +1,4 @@
-name: Convert TSV Files
+name: Convert MSL Files
 
 on:
   push:
@@ -6,7 +6,6 @@ on:
       - main
     paths:
       - "ICTV_Master_Species_List_2024_MSL40.v1.xlsx"
-      - "VMR_MSL40.v1.20250307.xlsx"
 
 jobs:
   preprocess_tsv:
@@ -26,9 +25,6 @@ jobs:
       - name: Convert MSL files to TSV
         run: python MSLconverter.py
 
-      - name: Convert VMR files to TSV
-        run: python VMRconverter.py
-        
       - name: Commit converted files
         run: |
           git config --global user.name "github-actions[bot]"
