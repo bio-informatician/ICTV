@@ -1,0 +1,69 @@
+name: Convert TSV into Publication Files
+
+on:
+  workflow_run:
+    workflows: ["Convert TSV Files"] # Name of the first workflow
+    types:
+      - completed
+
+# on:
+#   push:
+#     branches:
+#       - main
+#     # paths:
+#     #   - "raw_files/**"
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout the repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Step 2: Set up Python
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      # Step 3: Install dependencies
+      - name: Install dependencies
+        run: pip install pandas
+
+      # Step 4: Run the conversion script
+      - name: Convert TSV to JSON, CSV, TSV, and XML
+        run: python create_output_files.py
+
+      # Step 5: Move newly created files to a safe location before cleanup
+      - name: Preserve new files
+        run: |
+          mkdir -p converted_files
+          mv json csv xml tsv converted_files/  # Adjust folder names as needed
+          cp README.md converted_files/  # Keep README.md
+
+      # Step 6: Create a new branch and remove all existing files
+      - name: Commit converted files
+        env:
+          OUTPUT_BRANCH: "v0.4" # Define your branch name
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Create and switch to the new branch
+          git checkout --orphan "$OUTPUT_BRANCH"
+
+          # Remove all files in the repo except the converted files
+          git rm -rf .
+
+          # Restore only the new folders
+          mv converted_files/* .
+          rmdir converted_files  # Cleanup empty directory
+
+          # Ensure the repository contains only the new files
+          git add json/ csv/ xml/ tsv/ README.md
+
+          # Commit and push
+          git commit -m "Auto-converted TSV files"
+          git push origin "$OUTPUT_BRANCH" --force
