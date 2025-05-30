@@ -2,26 +2,28 @@ import pandas as pd
 import os
 
 input_file = 'VMR.xlsx'
+sheet_name = 'VMR MSL40'
 output_dir = 'converted_files'
 
 os.makedirs(output_dir, exist_ok=True)
 
-# Load Excel file (all sheets)
-xls = pd.ExcelFile(input_file)
+# Read only the specified sheet
+df = pd.read_excel(input_file, sheet_name=sheet_name)
 
-for sheet_name in xls.sheet_names:
-    df = pd.read_excel(xls, sheet_name=sheet_name)
+# Drop common unwanted index column if present
+if 'Unnamed: 0' in df.columns:
+    df = df.drop(columns=['Unnamed: 0'])
 
-    # Save TSV
-    tsv_path = os.path.join(output_dir, f'{sheet_name}.tsv')
-    df.to_csv(tsv_path, sep='\t', index=False)
+# Replace invalid XML tag characters in column names
+df.columns = [str(col).replace(' ', '_').replace(':', '_') for col in df.columns]
 
-    # Save JSON
-    json_path = os.path.join(output_dir, f'{sheet_name}.json')
-    df.to_json(json_path, orient='records', indent=2)
+# Export to TSV
+df.to_csv(os.path.join(output_dir, f'{sheet_name}.tsv'), sep='\t', index=False)
 
-    # Save XML (Pandas 1.3+ has to_xml)
-    xml_path = os.path.join(output_dir, f'{sheet_name}.xml')
-    df.to_xml(xml_path, index=False)
+# Export to JSON
+df.to_json(os.path.join(output_dir, f'{sheet_name}.json'), orient='records', indent=2)
 
-print("Conversion completed!")
+# Export to XML
+df.to_xml(os.path.join(output_dir, f'{sheet_name}.xml'), index=False)
+
+print("Conversion completed successfully.")
