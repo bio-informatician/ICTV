@@ -1,45 +1,35 @@
-name: Convert TSV Files
+name: Convert XLSX to TSV and JSON
 
 on:
   push:
     branches:
-      - main # Runs the workflow when pushing to `main`
+      - main
     paths:
-      - "VMR.xlsx" # Runs only when metadata.xlsx is updated
+      - "VMR.xlsx"  # Only run if VMR.xlsx is updated
 
 jobs:
-  preprocess_tsv:
+  preprocess_xlsx:
     runs-on: ubuntu-latest
+
     steps:
-      # Step 1: Checkout the repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Step 2: Set up Python
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.10"
 
-      # Step 3: Install dependencies
       - name: Install dependencies
-        run: pip install pandas
+        run: pip install pandas openpyxl
 
-      # Step 3: Install dependencies
-      - name: Install dependencies
-        run: pip install openpyxl
+      - name: Convert XLSX to TSV and JSON
+        run: python convert_xlsx_to_tsv.py
 
-      # Step 4: Run the TSV conversion script
-      - name: Convert XLSX to TSV
-        run: python convert_xlsx_to_tsv.py # Make sure this script is in the repo
-
-      # Step 5: Commit and push the new TSV files
       - name: Commit converted files
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add raw_files/*.tsv
-          git commit -m "Auto-generated TSV and json files from VMR.xlsx" || echo "No changes to commit"
-          git push origin main  
-          
- 
+          git add raw_files/*.tsv raw_files/*.json
+          git commit -m "Auto-generated TSV and JSON files from VMR.xlsx" || echo "No changes to commit"
+          git push origin main
