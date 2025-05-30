@@ -6,13 +6,6 @@ on:
     types:
       - completed
 
-# on:
-#   push:
-#     branches:
-#       - main
-#     # paths:
-#     #   - "raw_files/**"
-
 jobs:
   convert:
     runs-on: ubuntu-latest
@@ -30,8 +23,6 @@ jobs:
 
       # Step 3: Install dependencies
       - name: Install dependencies
-        run: pip install pandas
-      - name: Install dependencies
         run: pip install pandas openpyxl
 
       # Step 4: Run the conversion script
@@ -42,30 +33,24 @@ jobs:
       - name: Preserve new files
         run: |
           mkdir -p converted_files
-          mv json csv xml tsv converted_files/  # Adjust folder names as needed
-          cp README.md converted_files/  # Keep README.md
+          mv json csv xml tsv converted_files/
+          cp README.md converted_files/  # Optional: retain README
 
-      # Step 6: Create a new branch and remove all existing files
-      - name: Commit converted files
+      # Step 6: Create a new branch and push files using PAT
+      - name: Commit converted files and push with PAT
         env:
-          OUTPUT_BRANCH: "v0.3" # Define your branch name
+          OUTPUT_BRANCH: "v0.3"
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Create and switch to the new branch
+          # Create and switch to a new orphan branch
           git checkout --orphan "$OUTPUT_BRANCH"
 
-          # Remove all files in the repo except the converted files
+          # Remove all existing files
           git rm -rf .
 
-          # Restore only the new folders
+          # Move converted files back
           mv converted_files/* .
-          rmdir converted_files  # Cleanup empty directory
-
-          # Ensure the repository contains only the new files
-          git add json/ csv/ xml/ tsv/ README.md
-
-          # Commit and push
-          git commit -m "Auto-converted TSV files"
-          git push origin "$OUTPUT_BRANCH" --force
+          rmdir convert
