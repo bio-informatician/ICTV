@@ -32,7 +32,7 @@ jobs:
         pip install -r requirements.txt
 
     - name: Convert MSL.xlsx to TSV, JSON, XML
-      run: python convert.py
+      run: python convert-msl.py
 
     - name: Commit and push converted files
       run: |
