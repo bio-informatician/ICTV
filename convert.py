@@ -8,14 +8,14 @@ output_dir = 'converted_files'
 
 os.makedirs(output_dir, exist_ok=True)
 
-# Read the specified sheet only
+# Load the specific sheet
 df = pd.read_excel(input_file, sheet_name=sheet_name)
 
-# Drop unnamed index column if present
+# Drop unwanted index column if present
 if 'Unnamed: 0' in df.columns:
     df = df.drop(columns=['Unnamed: 0'])
 
-# Clean column names for XML: remove spaces, parentheses, etc.
+# Clean column names for XML tags
 df.columns = [re.sub(r'\W+', '_', str(col)) for col in df.columns]
 
 # Export to TSV
