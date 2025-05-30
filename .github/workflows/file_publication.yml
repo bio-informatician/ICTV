@@ -2,7 +2,7 @@ name: Convert TSV into Publication Files
 
 on:
   workflow_run:
-    workflows: ["Convert TSV Files"]
+    workflows: ["Convert TSV Files"] # Trigger after the "Convert TSV Files" workflow completes
     types:
       - completed
 
@@ -39,19 +39,17 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Create orphan branch and clean repo
+          # Create and switch to orphan branch
           git checkout --orphan "$OUTPUT_BRANCH"
           git rm -rf .
 
-          # Restore converted files
+          # Move converted files back to root
           mv converted_files/* .
           rmdir converted_files
 
           git add json/ csv/ xml/ tsv/ README.md
           git commit -m "Auto-converted TSV files"
 
-          # Set remote URL with PAT token to authenticate push
+          # Use PAT to authenticate push
           git remote set-url origin https://x-access-token:${PAT_TOKEN}@github.com/${{ github.repository }}
-
-          # Push changes forcefully to the OUTPUT_BRANCH
           git push origin "$OUTPUT_BRANCH" --force
