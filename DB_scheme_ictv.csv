@@ -1,0 +1,22 @@
+vjdbv0.3_field_id,vjdbv0.3_fields_type,ncbi_virus_n_nucleotide_field_id,bv-brc_b_field_name,vjdbv0.3_input_source,vjdbv0.3_field_index,ictv40_i_field_name
+sample_species_name_abbreviation,keyword,N/A,N/A,ICTV,0cn,Virus name abbreviation(s)
+ictv_realm,keyword,N/A,N/A,ICTV,0fi,Realm
+ictv_subrealm,keyword,N/A,N/A,ICTV,0fj,Subrealm
+ictv_kingdom,keyword,N/A,N/A,ICTV,0fk,Kingdom
+ictv_subkingdom,keyword,N/A,N/A,ICTV,0fl,Subkingdom
+ictv_phylum,keyword,N/A,N/A,ICTV,0fm,Phylum
+ictv_subphylum,keyword,N/A,N/A,ICTV,0fn,Subphylum
+ictv_class,keyword,N/A,N/A,ICTV,0fo,Class
+ictv_subclass,keyword,N/A,N/A,ICTV,0fp,Subclass
+ictv_order,keyword,N/A,N/A,ICTV,0fq,Order
+ictv_suborder,keyword,N/A,N/A,ICTV,0fr,Suborder
+ictv_family,keyword,N/A,N/A,ICTV,0fs,Family
+ictv_subfamily,keyword,N/A,N/A,ICTV,0ft,Subfamily
+ictv_genus,keyword,N/A,N/A,ICTV,0fu,Genus
+ictv_subgenus,keyword,N/A,N/A,ICTV,0fv,Subgenus
+ictv_species,keyword,N/A,N/A,ICTV,0fw,Species
+ictv_taxon_lineage_names,keyword,N/A,N/A,ICTV,0gv,N/A
+is_ictv_reference,boolean,N/A,N/A,ICTV,0gw,N/A
+ictv_host_group,keyword,N/A,N/A,ICTV,0gy,Host source
+ictv_id,keyword,N/A,N/A,ICTV,0gz,ICTV_ID
+ictv_virus_name,keyword,N/A,N/A,ICTV,0ha,Virus name(s)
