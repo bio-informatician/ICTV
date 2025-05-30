@@ -4,7 +4,6 @@ on:
   push:
     paths:
       - 'VMR.xlsx'
-
 jobs:
   convert:
     runs-on: ubuntu-latest
@@ -12,6 +11,11 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
+
+    - name: Install system dependencies for lxml
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libxml2-dev libxslt1-dev python3-dev
 
     - name: Set up Python 3.9
       uses: actions/setup-python@v4
@@ -33,5 +37,4 @@ jobs:
         git add converted_files/
         git commit -m "Auto-convert VMR.xlsx to TSV, JSON, XML"
         git push
-      # If no changes, commit will fail — ignore error
       continue-on-error: true
