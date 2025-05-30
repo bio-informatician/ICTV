@@ -2,7 +2,7 @@ name: Convert TSV into Publication Files
 
 on:
   workflow_run:
-    workflows: ["Convert TSV Files"] # Name of the first workflow
+    workflows: ["Convert TSV Files"]
     types:
       - completed
 
@@ -11,32 +11,26 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout the repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Step 2: Set up Python
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.10"
 
-      # Step 3: Install dependencies
       - name: Install dependencies
         run: pip install pandas openpyxl
 
-      # Step 4: Run the conversion script
       - name: Convert TSV to JSON, CSV, TSV, and XML
         run: python create_output_files.py
 
-      # Step 5: Move newly created files to a safe location before cleanup
       - name: Preserve new files
         run: |
           mkdir -p converted_files
           mv json csv xml tsv converted_files/
-          cp README.md converted_files/  # Optional: retain README
+          cp README.md converted_files/
 
-      # Step 6: Create a new branch and push files using PAT
       - name: Commit converted files and push with PAT
         env:
           OUTPUT_BRANCH: "v0.3"
@@ -45,12 +39,19 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Create and switch to a new orphan branch
+          # Create orphan branch and clean repo
           git checkout --orphan "$OUTPUT_BRANCH"
-
-          # Remove all existing files
           git rm -rf .
 
-          # Move converted files back
+          # Restore converted files
           mv converted_files/* .
-          rmdir convert
+          rmdir converted_files
+
+          git add json/ csv/ xml/ tsv/ README.md
+          git commit -m "Auto-converted TSV files"
+
+          # Set remote URL with PAT token to authenticate push
+          git remote set-url origin https://x-access-token:${PAT_TOKEN}@github.com/${{ github.repository }}
+
+          # Push changes forcefully to the OUTPUT_BRANCH
+          git push origin "$OUTPUT_BRANCH" --force
