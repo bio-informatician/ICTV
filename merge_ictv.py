@@ -6,15 +6,13 @@ MSL_FILE = os.path.join(INPUT_FOLDER, "MSL.json")
 VMR_FILE = os.path.join(INPUT_FOLDER, "VMR.json")
 OUTPUT_FILE = os.path.join(INPUT_FOLDER, "merged_ictv.json")
 
-# Merge two entries by ICTV_ID, removing duplicate keys (MSL fields take precedence)
 def merge_entries(msl_entry, vmr_entry):
     merged = {}
     merged.update(vmr_entry)
-    merged.update(msl_entry)  # MSL overwrites duplicate keys
+    merged.update(msl_entry)  # MSL overwrites duplicates
     return merged
 
 def main():
-    # Make sure input folder exists
     if not os.path.exists(INPUT_FOLDER):
         raise FileNotFoundError(f"Input folder '{INPUT_FOLDER}' does not exist")
 
@@ -26,11 +24,9 @@ def main():
     with open(VMR_FILE, "r", encoding="utf-8") as f:
         vmr_data = json.load(f)
 
-    # Index entries by ICTV_ID
     msl_index = {entry["ICTV_ID"]: entry for entry in msl_data if "ICTV_ID" in entry}
     vmr_index = {entry["ICTV_ID"]: entry for entry in vmr_data if "ICTV_ID" in entry}
 
-    # Merge where ICTV_ID matches
     merged_data = []
     for ictv_id, msl_entry in msl_index.items():
         if ictv_id in vmr_index:
