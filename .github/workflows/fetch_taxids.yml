@@ -23,7 +23,7 @@ jobs:
 
     - name: Run Taxon Fetch Script
       env:
-        ENTREZ_EMAIL: your_email@example.com  # Or use secrets
+        ENTREZ_EMAIL: ${{ secrets.ENTREZ_EMAIL }}
       run: |
         python scripts/fetch_taxids.py
 
