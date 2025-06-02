@@ -3,8 +3,8 @@ import requests
 from time import sleep
 from Bio import Entrez
 
-# Your email is required by NCBI for API access
-Entrez.email = "ebiologist@gmail.com"
+import os
+Entrez.email = os.getenv("ENTREZ_EMAIL", "fallback@example.com")
 
 # Download JSON file from URL
 url = "https://raw.githubusercontent.com/bio-informatician/ICTV/refs/heads/main/converted_files/merged_ictv.json"
