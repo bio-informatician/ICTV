@@ -19,12 +19,12 @@ if 'Unnamed: 0' in df.columns:
 df.columns = [re.sub(r'\W+', '_', str(col)) for col in df.columns]
 
 # Export to TSV
-df.to_csv(os.path.join(output_dir, f'{sheet_name}.tsv'), sep='\t', index=False)
+df.to_csv(os.path.join(output_dir, f'{input_file}.tsv'), sep='\t', index=False)
 
 # Export to JSON
-df.to_json(os.path.join(output_dir, f'{sheet_name}.json'), orient='records', indent=2)
+df.to_json(os.path.join(output_dir, f'{input_file}.json'), orient='records', indent=2)
 
 # Export to XML
-df.to_xml(os.path.join(output_dir, f'{sheet_name}.xml'), index=False)
+df.to_xml(os.path.join(output_dir, f'{input_file}.xml'), index=False)
 
 print("Conversion completed successfully.")
