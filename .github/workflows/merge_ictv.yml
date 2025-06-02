@@ -1,9 +1,9 @@
-name: Merge ICTV Data
+name: Merge ICTV JSON files
 
 on:
-  workflow_dispatch:  # Allows manual run
+  workflow_dispatch:  # manual trigger
   schedule:
-    - cron: '0 0 * * 1'  # Runs every Monday at midnight UTC
+    - cron: '0 0 * * 1'  # every Monday at midnight UTC
 
 jobs:
   merge:
@@ -24,10 +24,17 @@ jobs:
     - name: Run merge script
       run: python merge_ictv.py
 
-    - name: Commit and push if changed
+    - name: List files in converted_files for debug
+      run: ls -l converted_files
+
+    - name: Commit and push changes
       run: |
         git config --global user.name 'github-actions'
         git config --global user.email 'github-actions@github.com'
-        git add merged_ictv.json
-        git diff --quiet && git diff --staged --quiet || git commit -m "Auto-update merged ICTV JSON"
-        git push
+        git add converted_files/merged_ictv.json
+        if ! git diff --quiet || ! git diff --staged --quiet; then
+          git commit -m "Auto-update merged ICTV JSON"
+          git push
+        else
+          echo "No changes to commit"
+        fi
