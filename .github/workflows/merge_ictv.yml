@@ -1,0 +1,33 @@
+name: Merge ICTV Data
+
+on:
+  workflow_dispatch:  # Allows manual run
+  schedule:
+    - cron: '0 0 * * 1'  # Runs every Monday at midnight UTC
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repo
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: pip install requests
+
+    - name: Run merge script
+      run: python merge_ictv.py
+
+    - name: Commit and push if changed
+      run: |
+        git config --global user.name 'github-actions'
+        git config --global user.email 'github-actions@github.com'
+        git add merged_ictv.json
+        git diff --quiet && git diff --staged --quiet || git commit -m "Auto-update merged ICTV JSON"
+        git push
