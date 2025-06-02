@@ -38,7 +38,7 @@ def main():
             merged_data.append(merged)
 
     # Output result
-    with open("merged_ictv.json", "w") as f:
+    with open("converted_files/merged_ictv.json", "w") as f:
         json.dump(merged_data, f, indent=2)
 
     print(f"Merged {len(merged_data)} entries. Saved to 'converted_files/merged_ictv.json'.")
