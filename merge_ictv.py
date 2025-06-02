@@ -1,16 +1,10 @@
-import requests
 import json
-from collections import OrderedDict
+import os
 
-# URLs of the JSON files
-msl_url = "https://raw.githubusercontent.com/bio-informatician/ICTV/refs/heads/main/converted_files/MSL.json"
-vmr_url = "https://raw.githubusercontent.com/bio-informatician/ICTV/refs/heads/main/converted_files/VMR.json"
-
-# Download JSON data
-def download_json(url):
-    response = requests.get(url)
-    response.raise_for_status()
-    return response.json()
+INPUT_FOLDER = "converted_files"
+MSL_FILE = os.path.join(INPUT_FOLDER, "MSL.json")
+VMR_FILE = os.path.join(INPUT_FOLDER, "VMR.json")
+OUTPUT_FILE = os.path.join(INPUT_FOLDER, "merged_ictv.json")
 
 # Merge two entries by ICTV_ID, removing duplicate keys (MSL fields take precedence)
 def merge_entries(msl_entry, vmr_entry):
@@ -19,12 +13,18 @@ def merge_entries(msl_entry, vmr_entry):
     merged.update(msl_entry)  # MSL overwrites duplicate keys
     return merged
 
-# Main script
 def main():
-    print("Downloading MSL...")
-    msl_data = download_json(msl_url)
-    print("Downloading VMR...")
-    vmr_data = download_json(vmr_url)
+    # Make sure input folder exists
+    if not os.path.exists(INPUT_FOLDER):
+        raise FileNotFoundError(f"Input folder '{INPUT_FOLDER}' does not exist")
+
+    print(f"Loading {MSL_FILE} ...")
+    with open(MSL_FILE, "r", encoding="utf-8") as f:
+        msl_data = json.load(f)
+
+    print(f"Loading {VMR_FILE} ...")
+    with open(VMR_FILE, "r", encoding="utf-8") as f:
+        vmr_data = json.load(f)
 
     # Index entries by ICTV_ID
     msl_index = {entry["ICTV_ID"]: entry for entry in msl_data if "ICTV_ID" in entry}
@@ -37,11 +37,11 @@ def main():
             merged = merge_entries(msl_entry, vmr_index[ictv_id])
             merged_data.append(merged)
 
-    # Output result
-    with open("converted_files/merged_ictv.json", "w") as f:
+    print(f"Writing merged data to {OUTPUT_FILE} ...")
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(merged_data, f, indent=2)
 
-    print(f"Merged {len(merged_data)} entries. Saved to 'converted_files/merged_ictv.json'.")
+    print(f"Merged {len(merged_data)} entries. Saved to '{OUTPUT_FILE}'.")
 
 if __name__ == "__main__":
     main()
