@@ -32,7 +32,7 @@ jobs:
         pip install -r requirements.txt
 
     - name: Convert VMR.xlsx to TSV, JSON, XML
-      run: python convert.py
+      run: python convert-vmr.py
 
     - name: Commit and push converted files
       run: |
