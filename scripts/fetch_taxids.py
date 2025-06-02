@@ -1,83 +1,108 @@
 import json
-import os
-from time import sleep
 from Bio import Entrez
 
-# Use your GitHub secret email for NCBI API
-Entrez.email = os.getenv("ENTREZ_EMAIL", "fallback@example.com")
+Entrez.email = "your.email@example.com"  # replace with your email
 
-json_path = "converted_files/merged_ictv.json"
-backup_path = "converted_files/merged_ictv_backup.json"
+def get_all_accessions_from_json(file_path, key="Virus_GENBANK_accession"):
+    with open(file_path, "r") as f:
+        data = json.load(f)
+    
+    accessions = []
+    if isinstance(data, list):
+        for entry in data:
+            if key in entry:
+                val = entry[key]
+                if isinstance(val, list):
+                    accessions.extend(val)
+                else:
+                    accessions.append(val)
+    elif isinstance(data, dict):
+        for k, entry in data.items():
+            if isinstance(entry, dict) and key in entry:
+                val = entry[key]
+                if isinstance(val, list):
+                    accessions.extend(val)
+                else:
+                    accessions.append(val)
+    
+    unique_accessions = list(dict.fromkeys(accessions))
+    return unique_accessions, data
 
-# Load JSON data
-with open(json_path, "r") as f:
-    data = json.load(f)
 
-# Create a set of accessions we've already processed
-processed_accessions = {
-    entry.get("Virus_GENBANK_accession")
-    for entry in data
-    if entry and "Taxon_ID" in entry
-}
+def fetch_taxid_for_accessions(accessions):
+    import json
 
-def get_taxon_id_from_accession(accession):
-    try:
-        handle = Entrez.esearch(db="nuccore", term=accession)
-        record = Entrez.read(handle)
-        handle.close()
+    taxid_map = {}
+    batch_size = 50
+    for i in range(0, len(accessions), batch_size):
+        batch = accessions[i:i+batch_size]
+        try:
+            handle = Entrez.esummary(db="nuccore", id=",".join(batch), retmode="json")
+            response_text = handle.read()
+            handle.close()
 
-        if not record["IdList"]:
-            print(f"Warning: No NCBI records found for accession: {accession}")
-            return None
+            records = json.loads(response_text)
+            summaries = records.get("result", {})
+            uids = summaries.get("uids", [])
+            for uid in uids:
+                summary = summaries.get(uid, {})
+                acc = summary.get("caption") or summary.get("Caption")
+                taxid = summary.get("taxid") or summary.get("TaxId")
+                if acc and taxid:
+                    taxid_map[acc] = taxid
 
-        uid = record["IdList"][0]
-        handle = Entrez.esummary(db="nuccore", id=uid)
-        summary = Entrez.read(handle)
-        handle.close()
+        except Exception as e:
+            print(f"Error fetching taxid for batch {batch}: {e}")
 
-        if not summary or len(summary) == 0:
-            print(f"Warning: No summary data found for accession: {accession}")
-            return None
+    return taxid_map
 
-        taxid = summary[0].get("TaxId")
-        if not taxid:
-            print(f"Warning: TaxId not found in summary for accession: {accession}")
-            return None
 
-        return int(taxid)
+def update_json_with_taxid(data, taxid_map, accession_key="Virus_GENBANK_accession", taxid_key="TaxID"):
+    def get_taxids_for_accessions(accessions):
+        if isinstance(accessions, list):
+            taxids = [taxid_map.get(acc) for acc in accessions if acc in taxid_map]
+            taxids = list(dict.fromkeys(filter(None, taxids)))
+            if len(taxids) == 1:
+                return taxids[0]
+            elif len(taxids) > 1:
+                return taxids
+            else:
+                return None
+        else:
+            return taxid_map.get(accessions)
 
-    except Exception as e:
-        print(f"Error fetching Taxon ID for {accession}: {e}")
-        return None
+    if isinstance(data, list):
+        for entry in data:
+            if accession_key in entry:
+                taxid_value = get_taxids_for_accessions(entry[accession_key])
+                if taxid_value is not None:
+                    entry[taxid_key] = taxid_value
 
-# Enrich entries with Taxon_ID where possible and write progress
-for i, entry in enumerate(data):
-    if not entry:
-        print(f"Skipping null entry at index {i}")
-        continue
+    elif isinstance(data, dict):
+        for k, entry in data.items():
+            if isinstance(entry, dict) and accession_key in entry:
+                taxid_value = get_taxids_for_accessions(entry[accession_key])
+                if taxid_value is not None:
+                    entry[taxid_key] = taxid_value
+    return data
 
-    accession = entry.get("Virus_GENBANK_accession")
-    if not accession or not isinstance(accession, str):
-        print(f"Skipping entry with invalid accession at index {i}")
-        continue
 
-    accession = accession.strip()
+if __name__ == "__main__":
+    input_json_path = "converted_files/merged_ictv.json"
 
-    if accession in processed_accessions:
-        print(f"Already processed {accession}, skipping.")
-        continue
+    # Step 1: Extract all accession numbers and load JSON data
+    accessions, json_data = get_all_accessions_from_json(input_json_path)
+    print(f"Got {len(accessions)} total accessions from JSON.")
 
-    taxid = get_taxon_id_from_accession(accession)
-    if taxid is not None:
-        entry["Taxon_ID"] = taxid
-        print(f"{accession} => Taxon ID: {taxid}")
-    else:
-        print(f"{accession} => No Taxon ID found, skipping.")
+    # Step 2: Fetch TaxIDs for all accessions (in batches)
+    accession_taxid_map = fetch_taxid_for_accessions(accessions)
+    print(f"Fetched TaxIDs for {len(accession_taxid_map)} accessions.")
 
-    # Write after every update to ensure resuming is possible
-    with open(json_path, "w") as f:
-        json.dump(data, f, indent=2)
-    with open(backup_path, "w") as f:
-        json.dump(data, f, indent=2)
+    # Step 3: Update JSON with TaxID info
+    updated_json = update_json_with_taxid(json_data, accession_taxid_map)
 
-    sleep(0.34)  # NCBI limit
+    # Step 4: Save updated JSON (overwrite original)
+    with open(input_json_path, "w") as f_out:
+        json.dump(updated_json, f_out, indent=2)
+
+    print(f"Finished updating JSON file: {input_json_path}")
