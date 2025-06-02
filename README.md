@@ -1,3 +1,4 @@
+[![Fetch Taxon IDs](https://github.com/bio-informatician/ICTV/actions/workflows/fetch_taxids.yml/badge.svg)](https://github.com/bio-informatician/ICTV/actions/workflows/fetch_taxids.yml)
 # ICTV: Virus Metadata Conversion and Automation
 
 This repository automates the conversion of virus metadata stored in `VMR.xlsx` into multiple machine-readable formats using GitHub Actions. When a new version of `VMR.xlsx` is committed, the repository automatically generates the following:
