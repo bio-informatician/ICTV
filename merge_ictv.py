@@ -41,7 +41,7 @@ def main():
     with open("merged_ictv.json", "w") as f:
         json.dump(merged_data, f, indent=2)
 
-    print(f"Merged {len(merged_data)} entries. Saved to 'merged_ictv.json'.")
+    print(f"Merged {len(merged_data)} entries. Saved to 'converted_files/merged_ictv.json'.")
 
 if __name__ == "__main__":
     main()
