@@ -4,35 +4,43 @@ from Bio import Entrez
 Entrez.email = "your.email@example.com"  # replace with your email
 
 def get_all_accessions_from_json(file_path, key="Virus_GENBANK_accession"):
+    def extract_accessions(val):
+        result = []
+        if isinstance(val, list):
+            values = val
+        else:
+            values = [val]
+        for v in values:
+            if not v:
+                continue
+            if ";" in v or ":" in v:
+                parts = v.split(";")
+                for part in parts:
+                    if ":" in part:
+                        acc = part.strip().split(":")[-1].strip()
+                        result.append(acc)
+            else:
+                result.append(v.strip())
+        return result
+
     with open(file_path, "r") as f:
         data = json.load(f)
-    
+
     accessions = []
     if isinstance(data, list):
         for entry in data:
             val = entry.get(key)
-            if val is None:
-                continue
-            if isinstance(val, list):
-                accessions.extend([v for v in val if v is not None])
-            else:
-                if val is not None:
-                    accessions.append(val)
+            if val is not None:
+                accessions.extend(extract_accessions(val))
     elif isinstance(data, dict):
         for k, entry in data.items():
             if isinstance(entry, dict):
                 val = entry.get(key)
-                if val is None:
-                    continue
-                if isinstance(val, list):
-                    accessions.extend([v for v in val if v is not None])
-                else:
-                    if val is not None:
-                        accessions.append(val)
-    
+                if val is not None:
+                    accessions.extend(extract_accessions(val))
+
     unique_accessions = list(dict.fromkeys(accessions))
     return unique_accessions, data
-
 
 
 def fetch_taxid_for_accessions(accessions):
