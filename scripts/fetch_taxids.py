@@ -1,122 +1,102 @@
 import json
-from Bio import Entrez
+import requests
+import time
 
-Entrez.email = "your.email@example.com"  # replace with your email
+INPUT_FILE = 'merged_ictv.json'
+API_URL = "https://api.ncbi.nlm.nih.gov/datasets/v2/taxonomy"
+HEADERS = {
+    'accept': 'application/json',
+    'content-type': 'application/json'
+}
 
-def get_all_accessions_from_json(file_path, key="Virus_GENBANK_accession"):
-    def extract_accessions(val):
-        result = []
-        if isinstance(val, list):
-            values = val
+def query_taxonomy(taxon):
+    try:
+        response = requests.post(API_URL, headers=HEADERS, json={"taxons": [str(taxon)]})
+        if response.status_code == 200:
+            return response.json()
+    except Exception:
+        pass
+    return None
+
+def extract_taxonomy_object(api_response):
+    if not api_response:
+        return None
+    try:
+        return api_response.get("taxonomy_nodes", [{}])[0].get("taxonomy", None)
+    except (IndexError, AttributeError):
+        return None
+
+def extract_species_tax_id(api_response):
+    taxonomy = extract_taxonomy_object(api_response)
+    if taxonomy and taxonomy.get("rank") == "SPECIES":
+        return taxonomy.get("tax_id")
+    return None
+
+def extract_tax_id_if_name_matches(api_response, virus_name):
+    taxonomy = extract_taxonomy_object(api_response)
+    if taxonomy and taxonomy.get("organism_name", "").strip() == virus_name.strip():
+        return taxonomy.get("tax_id")
+    return None
+
+def extract_lineage(api_response):
+    taxonomy = extract_taxonomy_object(api_response)
+    if taxonomy:
+        return taxonomy.get("lineage", [])
+    return []
+
+def search_species_in_lineage(lineage):
+    for tax_id in reversed(lineage):
+        resp = query_taxonomy(tax_id)
+        if resp:
+            species_tax_id = extract_species_tax_id(resp)
+            if species_tax_id:
+                return species_tax_id
+        time.sleep(0.5)
+    return None
+
+def main():
+    with open(INPUT_FILE, 'r', encoding='utf-8') as f:
+        entries = json.load(f)
+
+    for entry in entries:
+        species_tax_id = None
+        response_from_taxid = None
+        response_from_name = None
+
+        taxid = entry.get("TaxID")
+        species_name = entry.get("Species")
+        virus_name = entry.get("Virus_name_s_")
+
+        # Step 1: Try TaxID
+        if taxid:
+            response_from_taxid = query_taxonomy(taxid)
+            species_tax_id = extract_species_tax_id(response_from_taxid)
+
+        # Step 2: Try Species name
+        if not species_tax_id and species_name:
+            response_from_name = query_taxonomy(species_name)
+            species_tax_id = extract_species_tax_id(response_from_name)
+
+        # Step 3: Match Virus_name_s_
+        if not species_tax_id and response_from_name and virus_name:
+            species_tax_id = extract_tax_id_if_name_matches(response_from_name, virus_name)
+
+        # Step 4: Use lineage from TaxID response
+        if not species_tax_id and response_from_taxid:
+            lineage = extract_lineage(response_from_taxid)
+            if lineage:
+                species_tax_id = search_species_in_lineage(lineage)
+
+        if species_tax_id:
+            entry["Species_Tax_ID"] = species_tax_id
         else:
-            values = [val]
-        for v in values:
-            if not v:
-                continue
-            if ";" in v or ":" in v:
-                parts = v.split(";")
-                for part in parts:
-                    if ":" in part:
-                        acc = part.strip().split(":")[-1].strip()
-                        result.append(acc)
-            else:
-                result.append(v.strip())
-        return result
+            print(f"❌ Could not determine Species_Tax_ID for entry: {species_name or taxid}")
 
-    with open(file_path, "r") as f:
-        data = json.load(f)
+        # Live update: write updated JSON back to input file after each entry processed
+        with open(INPUT_FILE, 'w', encoding='utf-8') as f:
+            json.dump(entries, f, indent=2)
 
-    accessions = []
-    if isinstance(data, list):
-        for entry in data:
-            val = entry.get(key)
-            if val is not None:
-                accessions.extend(extract_accessions(val))
-    elif isinstance(data, dict):
-        for k, entry in data.items():
-            if isinstance(entry, dict):
-                val = entry.get(key)
-                if val is not None:
-                    accessions.extend(extract_accessions(val))
+        time.sleep(0.5)
 
-    unique_accessions = list(dict.fromkeys(accessions))
-    return unique_accessions, data
-
-
-def fetch_taxid_for_accessions(accessions):
-    import json
-
-    taxid_map = {}
-    batch_size = 50
-    for i in range(0, len(accessions), batch_size):
-        batch = accessions[i:i+batch_size]
-        try:
-            handle = Entrez.esummary(db="nuccore", id=",".join(batch), retmode="json")
-            response_text = handle.read()
-            handle.close()
-
-            records = json.loads(response_text)
-            summaries = records.get("result", {})
-            uids = summaries.get("uids", [])
-            for uid in uids:
-                summary = summaries.get(uid, {})
-                acc = summary.get("caption") or summary.get("Caption")
-                taxid = summary.get("taxid") or summary.get("TaxId")
-                if acc and taxid:
-                    taxid_map[acc] = taxid
-
-        except Exception as e:
-            print(f"Error fetching taxid for batch {batch}: {e}")
-
-    return taxid_map
-
-
-def update_json_with_taxid(data, taxid_map, accession_key="Virus_GENBANK_accession", taxid_key="TaxID"):
-    def get_taxids_for_accessions(accessions):
-        if isinstance(accessions, list):
-            taxids = [taxid_map.get(acc) for acc in accessions if acc in taxid_map]
-            taxids = list(dict.fromkeys(filter(None, taxids)))
-            if len(taxids) == 1:
-                return taxids[0]
-            elif len(taxids) > 1:
-                return taxids
-            else:
-                return None
-        else:
-            return taxid_map.get(accessions)
-
-    if isinstance(data, list):
-        for entry in data:
-            if accession_key in entry:
-                taxid_value = get_taxids_for_accessions(entry[accession_key])
-                if taxid_value is not None:
-                    entry[taxid_key] = taxid_value
-
-    elif isinstance(data, dict):
-        for k, entry in data.items():
-            if isinstance(entry, dict) and accession_key in entry:
-                taxid_value = get_taxids_for_accessions(entry[accession_key])
-                if taxid_value is not None:
-                    entry[taxid_key] = taxid_value
-    return data
-
-
-if __name__ == "__main__":
-    input_json_path = "converted_files/merged_ictv.json"
-
-    # Step 1: Extract all accession numbers and load JSON data
-    accessions, json_data = get_all_accessions_from_json(input_json_path)
-    print(f"Got {len(accessions)} total accessions from JSON.")
-
-    # Step 2: Fetch TaxIDs for all accessions (in batches)
-    accession_taxid_map = fetch_taxid_for_accessions(accessions)
-    print(f"Fetched TaxIDs for {len(accession_taxid_map)} accessions.")
-
-    # Step 3: Update JSON with TaxID info
-    updated_json = update_json_with_taxid(json_data, accession_taxid_map)
-
-    # Step 4: Save updated JSON (overwrite original)
-    with open(input_json_path, "w") as f_out:
-        json.dump(updated_json, f_out, indent=2)
-
-    print(f"Finished updating JSON file: {input_json_path}")
+if __name__ == '__main__':
+    main()
