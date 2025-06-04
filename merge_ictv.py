@@ -1,10 +1,30 @@
 import json
 import os
+from collections import defaultdict
 
 INPUT_FOLDER = "converted_files"
 MSL_FILE = os.path.join(INPUT_FOLDER, "MSL.json")
 VMR_FILE = os.path.join(INPUT_FOLDER, "VMR.json")
 OUTPUT_FILE = os.path.join(INPUT_FOLDER, "merged_ictv.json")
+
+def merge_vmr_entries(vmr_entries):
+    merged = {}
+    if not vmr_entries:
+        return merged
+
+    keys = vmr_entries[0].keys()
+    for key in keys:
+        values = [entry[key] for entry in vmr_entries if key in entry and entry[key]]
+
+        # Deduplicate and concatenate string values with ";"
+        if all(isinstance(v, str) for v in values):
+            unique_vals = sorted(set(values))
+            merged[key] = "; ".join(unique_vals)
+        else:
+            # Assume other types can be overridden or handled case-by-case
+            merged[key] = values[0]
+
+    return merged
 
 def merge_entries(msl_entry, vmr_entry):
     merged = {}
@@ -24,13 +44,24 @@ def main():
     with open(VMR_FILE, "r", encoding="utf-8") as f:
         vmr_data = json.load(f)
 
-    msl_index = {entry["ICTV_ID"]: entry for entry in msl_data if "ICTV_ID" in entry}
-    vmr_index = {entry["ICTV_ID"]: entry for entry in vmr_data if "ICTV_ID" in entry}
+    # Group VMR entries by "Species_Sort"
+    vmr_grouped = defaultdict(list)
+    for entry in vmr_data:
+        key = entry.get("Species_Sort")
+        if key:
+            vmr_grouped[key].append(entry)
 
+    # Merge VMR entries by "Species_Sort"
+    merged_vmr = {key: merge_vmr_entries(entries) for key, entries in vmr_grouped.items()}
+
+    # Index MSL by "Sort"
+    msl_index = {entry["Sort"]: entry for entry in msl_data if "Sort" in entry}
+
+    # Merge VMR and MSL based on matching "Species_Sort" and "Sort"
     merged_data = []
-    for ictv_id, msl_entry in msl_index.items():
-        if ictv_id in vmr_index:
-            merged = merge_entries(msl_entry, vmr_index[ictv_id])
+    for sort_key, msl_entry in msl_index.items():
+        if sort_key in merged_vmr:
+            merged = merge_entries(msl_entry, merged_vmr[sort_key])
             merged_data.append(merged)
 
     print(f"Writing merged data to {OUTPUT_FILE} ...")
