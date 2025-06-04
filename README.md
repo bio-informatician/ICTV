@@ -1,4 +1,4 @@
-[![Convert MSL Excel](https://github.com/bio-informatician/ICTV/actions/workflows/convert-msl.yml/badge.svg)](https://github.com/bio-informatician/ICTV/actions/workflows/convert-msl.yml)   [![Convert VMR Excel](https://github.com/bio-informatician/ICTV/actions/workflows/convert-vmr.yml/badge.svg)](https://github.com/bio-informatician/ICTV/actions/workflows/convert-vmr.yml)   
+[![Convert MSL Excel](https://github.com/bio-informatician/ICTV/actions/workflows/convert-msl.yml/badge.svg)](https://github.com/bio-informatician/ICTV/actions/workflows/convert-msl.yml)       [![Convert VMR Excel](https://github.com/bio-informatician/ICTV/actions/workflows/convert-vmr.yml/badge.svg)](https://github.com/bio-informatician/ICTV/actions/workflows/convert-vmr.yml)   
 
 [![Fetch Taxon IDs](https://github.com/bio-informatician/ICTV/actions/workflows/fetch_taxids.yml/badge.svg)](https://github.com/bio-informatician/ICTV/actions/workflows/fetch_taxids.yml)
 # ICTV: Virus Metadata Conversion and Automation
