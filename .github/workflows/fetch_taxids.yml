@@ -25,7 +25,7 @@ jobs:
       env:
         ENTREZ_EMAIL: ${{ secrets.ENTREZ_EMAIL }}
       run: |
-        python scripts/fetch_taxids.py
+        python scripts/1_fetch_taxids.py
 
     - name: Upload result artifact
       uses: actions/upload-artifact@v4
