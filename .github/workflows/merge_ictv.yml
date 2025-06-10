@@ -22,7 +22,7 @@ jobs:
       run: pip install requests
 
     - name: Run merge script
-      run: python merge_ictv.py
+      run: python 0_merge_ictv_files.py
 
     - name: List files in converted_files for debug
       run: ls -l converted_files
