@@ -59,42 +59,8 @@ Ensure GitHub Actions has **write access** to the repository under:
 
 ---
 
-## 🚀 How to Use
-
-1. **Clone the repo** or edit `VMR.xlsx` directly in GitHub.
-2. Commit the updated Excel file.
-3. GitHub Actions will run automatically.
-4. Check the `converted_files/` directory for the updated TSV, JSON, and XML files.
-
----
-
-## 📚 Requirements (for local development)
-
-If you want to run the script locally:
-
-### Install Python packages:
-
-```bash
-pip install -r requirements.txt
-````
-
-### Requirements include:
-
-* `pandas`
-* `openpyxl`
-* `lxml`
-
----
-
-## ✍️ Author & License
-
-This project is maintained by the bioinformatics team. Contributions and improvements are welcome.
-
-> Licensed under MIT. See `LICENSE` file for more information.
-
----
-
-## 🧠 Notes
-
-* If your conversion fails due to XML tag naming errors, the script will sanitize column names to valid XML-safe formats automatically.
-* If pushing fails during automation, ensure Actions bot has appropriate permissions or consider using GitHub artifacts instead of committing outputs.
+## Steps 
+1. merge ICTV files, based on the ICTV ID by combineing the informationo f Exampler and Addisionals (uf exists) into one record. [0_merge_ictv_files.py]
+2. convert GenBank Accession ID to Taxonomy ID using NCBI resources. [1_fetch_taxids.py]
+3. find the species taxon ID using the TaxID, species name or virus name. [2_species_taxid.py]
+4. insert the taxonomy information using the species taxid into the database. [3_ictv2db.py]
