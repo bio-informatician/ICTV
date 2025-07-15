@@ -3,6 +3,7 @@ import time
 import requests
 from tqdm import tqdm
 import re
+import openpyxl  # pip install openpyxl
 
 EMAIL = "shahram4dev@gmail.com"
 API_KEY = "a1a61a96906ca0d589efef9e91541019b808"
@@ -129,15 +130,57 @@ def fetch_and_update_taxids(accessions, acc_map, json_data, json_path):
                 print(f"  - {acc}")
         else:
             print("✅ All previously failed accessions processed successfully on retry.")
-
-
     else:
         print("✅ All accessions processed successfully.")
 
+def extract_accessions_from_excel(excel_path, sheet_name=None):
+    """
+    Extract accession IDs and their full URLs from hyperlink URLs in Excel file.
+    Returns dict: { accession: full_url }
+    """
+    wb = openpyxl.load_workbook(excel_path, data_only=True)
+    ws = wb[sheet_name] if sheet_name else wb.active
+
+    accession_url_map = {}
+
+    for row in ws.iter_rows():
+        for cell in row:
+            if cell.hyperlink:
+                url = cell.hyperlink.target
+                if url:
+                    parts = url.strip().split('/')
+                    if parts:
+                        last_part = parts[-1]
+                        for acc in last_part.split(','):
+                            acc = acc.strip()
+                            if acc:
+                                accession_url_map[acc] = url
+    return accession_url_map
+
+
 if __name__ == "__main__":
     input_json_path = "converted_files/merged_ictv.json"
-    accessions, acc_map, json_data = get_all_accessions_from_json(input_json_path)
-    print(f"🔍 Found {len(accessions)} accessions to process.")
-    fetch_and_update_taxids(accessions, acc_map, json_data, input_json_path)
-    print(f"✅ JSON file updated: {input_json_path}")
+    input_excel_path = "your_excel_file.xlsx"  # <-- change this to your Excel filename
 
+    # Extract accessions from JSON
+    accessions_json, acc_map, json_data = get_all_accessions_from_json(input_json_path)
+    print(f"🔍 Found {len(accessions_json)} accessions in JSON.")
+
+    # Extract accessions and URLs from Excel
+    accession_url_map = extract_accessions_from_excel(input_excel_path)
+    print(f"🔍 Found {len(accession_url_map)} accessions in Excel hyperlinks.")
+
+    # Combine unique accessions
+    all_accessions = list(set(accessions_json) | set(accession_url_map.keys()))
+    print(f"🔍 Total unique accessions to process: {len(all_accessions)}")
+
+    # Add or update "from_url" field for accessions from Excel
+    for acc, url in accession_url_map.items():
+        if acc in acc_map:
+            if acc_map[acc].get("from_url") != url:
+                acc_map[acc]["from_url"] = url
+        else:
+            acc_map[acc] = {"from_url": url}
+
+    fetch_and_update_taxids(all_accessions, acc_map, json_data, input_json_path)
+    print(f"✅ JSON file updated: {input_json_path}")
