@@ -32,9 +32,6 @@ jobs:
         git config --global user.name 'github-actions'
         git config --global user.email 'github-actions@github.com'
         git add converted_files/merged_ictv.json
-        if ! git diff --quiet || ! git diff --staged --quiet; then
-          git commit -m "Auto-update merged ICTV JSON"
-          git push
-        else
-          echo "No changes to commit"
-        fi
+        git commit -m "Auto-update merged ICTV JSON"
+        git push
+    
