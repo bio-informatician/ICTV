@@ -17,12 +17,16 @@ def merge_vmr_entries(vmr_entries):
         values = [entry[key] for entry in vmr_entries if key in entry and entry[key]]
 
         # Deduplicate and concatenate string values with ";"
-        if all(isinstance(v, str) for v in values):
+        if key == "from_url" and values:
+            # Extract the variation part (after last '/') and remove any spaces
+            val = values[0].rsplit('/', 1)[-1].replace(" ", "")
+            merged[key] = val
+        elif all(isinstance(v, str) for v in values):
             unique_vals = sorted(set(values))
             merged[key] = "; ".join(unique_vals)
         else:
-            # Assume other types can be overridden or handled case-by-case
             merged[key] = values[0]
+
 
     return merged
 
