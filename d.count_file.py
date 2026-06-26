@@ -1,42 +1,64 @@
 import os
+import re
 import json
 from collections import defaultdict
 
 INPUT_DIR = "ncbi"
 OUTPUT_FILE = "accession_to_files.json"
 
+# Valid accession patterns:
+# KP710246
+# NC_011268
+# AB123456
+# etc.
+ACCESSION_PATTERN = re.compile(
+    r'([A-Z]{1,4}_?\d{5,9})'
+)
+
 
 def clean_accession(raw_value):
     """
     Clean accession strings.
 
-    Examples:
-        "L:KP710246" -> KP710246
-        " KP710246 " -> KP710246
-        "KP710246.1" -> KP710246
-        "LK928904 (nts 2253-10260)" -> LK928904
-        "(nts 2253-10260):LK928904" -> LK928904
+    Handles:
+        L:KP710246
+        M: KP710264
+        KP710246.1
+        LK928904 (nts 2253-10260)
+        (nts 2253-10260):LK928904
+        , NC_011268
     """
 
-    value = raw_value.strip()
+    value = str(raw_value).strip()
 
-    # Remove segment name before :
+    # Remove segment labels
+    # L:KP710246 -> KP710246
     if ":" in value:
         value = value.split(":")[-1].strip()
 
-    # Remove parenthesis annotation
+    # Remove parenthesis annotations
+    # LK928904 (nts 2253-10260)
     if "(" in value:
         value = value.split("(")[0].strip()
 
     # Remove version number
+    # NC_011268.1 -> NC_011268
     if "." in value:
         left, right = value.rsplit(".", 1)
 
-        # Only remove if right side is numeric
         if right.isdigit():
             value = left
 
-    return value.strip()
+    # Remove leading/trailing junk
+    value = value.strip(" ,;")
+
+    # Extract only valid accession
+    match = ACCESSION_PATTERN.search(value)
+
+    if match:
+        return match.group(1)
+
+    return None
 
 
 # accession -> set(files)
@@ -64,11 +86,11 @@ for filename in os.listdir(INPUT_DIR):
 
             for key, value in row.items():
 
-                # Only accession fields
+                # Only accession columns
                 if "accession" not in key.lower():
                     continue
 
-                # Skip empty values
+                # Skip empty fields
                 if not value:
                     continue
 
@@ -77,19 +99,19 @@ for filename in os.listdir(INPUT_DIR):
                 if not text:
                     continue
 
-                # Split multiple entries
+                # Split multiple accessions
                 # Example:
                 # L:KP710246; M:KP710264; S:KP710267
                 parts = text.split(";")
 
                 for part in parts:
 
-                    clean_acc = clean_accession(part)
+                    accession = clean_accession(part)
 
-                    if not clean_acc:
+                    if not accession:
                         continue
 
-                    accession_map[clean_acc].add(
+                    accession_map[accession].add(
                         filename
                     )
 
@@ -98,7 +120,7 @@ for filename in os.listdir(INPUT_DIR):
         print(f"ERROR {filename}: {e}")
 
 # =========================
-# CONVERT TO OUTPUT
+# BUILD OUTPUT
 # =========================
 
 output = []
@@ -113,7 +135,7 @@ for accession in sorted(accession_map):
     })
 
 # =========================
-# WRITE JSON
+# WRITE OUTPUT
 # =========================
 
 with open(
