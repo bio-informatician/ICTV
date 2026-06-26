@@ -1,4 +1,25 @@
 
+# IDE stuff
+.vscode
+.idea
+.ipynb_checkpoints
+*.iml
+*~
+
+# MacOS crap
+.DS_Store
+*/.DS_Store
+
+# this should not be required, as .git is excluded by default (?)
+.git/*
+.git/
+.git/objects/maintenance.lock
+
+# other
+__pycache__
+application/__pycache__
+__pycache__/
+application/webin-cli-8.*
 /csv
 /json
 /tsv
