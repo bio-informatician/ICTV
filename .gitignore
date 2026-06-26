@@ -24,3 +24,8 @@ application/webin-cli-8.*
 /json
 /tsv
 /xml
+
+fasta
+ncbi
+metadata
+.DS_Store
