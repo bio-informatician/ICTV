@@ -150,9 +150,8 @@ def query_virjendb(accession):
 # extract VirJenDB accession
 # ------------------------------------------------------------------
 
-def extract_vj_accession(record):
-
-    return record.get("VirJenDB Accession")
+def extract_vj_accession(record): 
+    return record.get("source", {}).get("VirJenDB Accession")
 
 
 # ------------------------------------------------------------------
