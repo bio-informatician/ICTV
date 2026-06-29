@@ -86,7 +86,6 @@ def parse_fasta(filepath):
 
 def get_insdc_accession(header):
 
-    # take first field before |
     accession = header.split("|")[0].strip()
 
     # remove version suffix if present
@@ -102,12 +101,20 @@ def get_insdc_accession(header):
 
 def query_virjendb(accession):
 
+    # cache hit
     if accession in cache:
+
+        print("  -> CACHE HIT")
+
         return cache[accession]
 
     payload = {
         "query": f"insdc_accession:{accession}"
     }
+
+    print("  -> Querying API...", end="", flush=True)
+
+    start_time = time.time()
 
     try:
 
@@ -118,14 +125,19 @@ def query_virjendb(accession):
                 "Content-Type": "application/json"
             },
             json=payload,
-            timeout=(10, 60)
+
+            # (connect timeout, read timeout)
+            timeout=(5, 30)
         )
+
+        elapsed = round(time.time() - start_time, 2)
+
+        print(f" done ({elapsed}s)")
 
         response.raise_for_status()
 
         data = response.json()
 
-        # API structure
         results = data.get("results", [])
 
         cache[accession] = results
@@ -137,7 +149,10 @@ def query_virjendb(accession):
 
     except Exception as e:
 
-        print(f"ERROR querying {accession}: {e}")
+        elapsed = round(time.time() - start_time, 2)
+
+        print(f" FAILED ({elapsed}s)")
+        print(f"  -> ERROR: {e}")
 
         cache[accession] = None
 
@@ -159,8 +174,6 @@ def extract_vj_accession(record):
 
 def validate_match(results, accession):
 
-    matched_record = None
-
     for r in results:
 
         source = r.get("source", {})
@@ -173,10 +186,9 @@ def validate_match(results, accession):
 
         if accession in normalized_db_accessions:
 
-            matched_record = r
-            break
+            return r
 
-    return matched_record
+    return None
 
 
 # ------------------------------------------------------------------
@@ -213,7 +225,7 @@ for fasta_file in fasta_files:
 
         accession = get_insdc_accession(header)
 
-        print(f"[{record_count}] Checking {accession}")
+        print(f"\n[{record_count}] Checking {accession}")
 
         results = query_virjendb(accession)
 
@@ -230,7 +242,7 @@ for fasta_file in fasta_files:
 
             not_exists_handle.flush()
 
-            print("  -> ERROR")
+            print("  -> STORED IN notindb (API ERROR)")
 
             continue
 
@@ -260,6 +272,7 @@ for fasta_file in fasta_files:
                 total_found += 1
 
                 print(f"  -> FOUND ({vj_accession})")
+                print("  -> STORED IN existsindb")
 
             else:
 
@@ -271,6 +284,7 @@ for fasta_file in fasta_files:
                 total_not_found += 1
 
                 print("  -> MATCHED but NO VirJenDB accession")
+                print("  -> STORED IN notindb")
 
         # ----------------------------------------------------------
         # no validated match
@@ -286,11 +300,12 @@ for fasta_file in fasta_files:
             total_not_found += 1
 
             print("  -> NOT FOUND")
+            print("  -> STORED IN notindb")
 
     exists_handle.close()
     not_exists_handle.close()
 
-    print(f"Finished {fasta_file.name}")
+    print(f"\nFinished {fasta_file.name}")
     print(f"Records processed: {record_count}")
 
 
@@ -306,3 +321,4 @@ print(f"Found in DB     : {total_found}")
 print(f"Not found       : {total_not_found}")
 print(f"Errors          : {total_errors}")
 print(f"Cache size      : {len(cache)}")
+
