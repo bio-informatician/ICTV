@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 
 import os
 import time
@@ -85,7 +86,14 @@ def parse_fasta(filepath):
 
 def get_insdc_accession(header):
 
-    return header.split("|")[0].strip()
+    # take first field before |
+    accession = header.split("|")[0].strip()
+
+    # remove version suffix if present
+    # AB000403.1 -> AB000403
+    accession = accession.split(".")[0]
+
+    return accession
 
 
 # ------------------------------------------------------------------
@@ -117,22 +125,12 @@ def query_virjendb(accession):
 
         data = response.json()
 
-        # adjust for API structure
-        if isinstance(data, list):
-            results = data
-
-        elif "results" in data:
-            results = data["results"]
-
-        elif "data" in data:
-            results = data["data"]
-
-        else:
-            results = []
+        # API structure
+        results = data.get("results", [])
 
         cache[accession] = results
 
-        # small delay to avoid hammering API
+        # polite delay
         time.sleep(0.2)
 
         return results
@@ -150,8 +148,35 @@ def query_virjendb(accession):
 # extract VirJenDB accession
 # ------------------------------------------------------------------
 
-def extract_vj_accession(record): 
+def extract_vj_accession(record):
+
     return record.get("source", {}).get("VirJenDB Accession")
+
+
+# ------------------------------------------------------------------
+# validate accession match
+# ------------------------------------------------------------------
+
+def validate_match(results, accession):
+
+    matched_record = None
+
+    for r in results:
+
+        source = r.get("source", {})
+
+        insdc_list = source.get("INSDC Accession", [])
+
+        normalized_db_accessions = [
+            x.split(".")[0] for x in insdc_list
+        ]
+
+        if accession in normalized_db_accessions:
+
+            matched_record = r
+            break
+
+    return matched_record
 
 
 # ------------------------------------------------------------------
@@ -161,7 +186,6 @@ def extract_vj_accession(record):
 total_found = 0
 total_not_found = 0
 total_errors = 0
-
 
 fasta_files = sorted(Path(INPUT_DIR).glob("*"))
 
@@ -211,12 +235,18 @@ for fasta_file in fasta_files:
             continue
 
         # ----------------------------------------------------------
-        # exactly one result
+        # validate accession match
         # ----------------------------------------------------------
 
-        if len(results) == 1:
+        matched_record = validate_match(results, accession)
 
-            vj_accession = extract_vj_accession(results[0])
+        # ----------------------------------------------------------
+        # valid match found
+        # ----------------------------------------------------------
+
+        if matched_record is not None:
+
+            vj_accession = extract_vj_accession(matched_record)
 
             if vj_accession:
 
@@ -240,10 +270,10 @@ for fasta_file in fasta_files:
 
                 total_not_found += 1
 
-                print("  -> NO VirJenDB accession")
+                print("  -> MATCHED but NO VirJenDB accession")
 
         # ----------------------------------------------------------
-        # zero or multiple results
+        # no validated match
         # ----------------------------------------------------------
 
         else:
@@ -255,7 +285,7 @@ for fasta_file in fasta_files:
 
             total_not_found += 1
 
-            print(f"  -> NOT FOUND ({len(results)} results)")
+            print("  -> NOT FOUND")
 
     exists_handle.close()
     not_exists_handle.close()
