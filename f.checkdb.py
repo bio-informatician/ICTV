@@ -1,9 +1,12 @@
-#!/usr/bin/env python3
 
 import os
-import json
+import time
 import requests
+
 from pathlib import Path
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
 
 INPUT_DIR = "vmr_multifasta"
 EXISTS_DIR = "existsindb"
@@ -11,115 +14,206 @@ NOT_EXISTS_DIR = "notindb"
 
 API_URL = "https://api2.virjendb.org/v2/search"
 
+
+# ------------------------------------------------------------------
 # create output directories
+# ------------------------------------------------------------------
+
 os.makedirs(EXISTS_DIR, exist_ok=True)
 os.makedirs(NOT_EXISTS_DIR, exist_ok=True)
 
 
+# ------------------------------------------------------------------
+# requests session with retry
+# ------------------------------------------------------------------
+
+session = requests.Session()
+
+retries = Retry(
+    total=5,
+    backoff_factor=2,
+    status_forcelist=[429, 500, 502, 503, 504],
+    allowed_methods=["POST"]
+)
+
+adapter = HTTPAdapter(max_retries=retries)
+
+session.mount("https://", adapter)
+session.mount("http://", adapter)
+
+
+# ------------------------------------------------------------------
+# cache
+# ------------------------------------------------------------------
+
+cache = {}
+
+
+# ------------------------------------------------------------------
+# fasta parser
+# ------------------------------------------------------------------
+
 def parse_fasta(filepath):
-    """
-    Simple FASTA parser preserving sequence formatting.
-    Returns list of tuples: (header_without_>, sequence_string)
-    """
-    records = []
 
     with open(filepath, "r") as f:
+
         header = None
         seq_lines = []
 
         for line in f:
+
             line = line.rstrip("\n")
 
             if line.startswith(">"):
-                if header is not None:
-                    records.append((header, "\n".join(seq_lines)))
 
-                header = line[1:]  # remove >
+                if header is not None:
+                    yield header, "\n".join(seq_lines)
+
+                header = line[1:]   # remove >
                 seq_lines = []
+
             else:
                 seq_lines.append(line)
 
         if header is not None:
-            records.append((header, "\n".join(seq_lines)))
+            yield header, "\n".join(seq_lines)
 
-    return records
 
+# ------------------------------------------------------------------
+# accession extraction
+# ------------------------------------------------------------------
 
 def get_insdc_accession(header):
-    """
-    Extract accession from beginning of header.
-    Example:
-    AB000923 | organism=...
-    """
+
     return header.split("|")[0].strip()
 
 
+# ------------------------------------------------------------------
+# query virjendb
+# ------------------------------------------------------------------
+
 def query_virjendb(accession):
+
+    if accession in cache:
+        return cache[accession]
+
     payload = {
         "query": f"insdc_accession:{accession}"
     }
 
     try:
-        response = requests.post(
+
+        response = session.post(
             API_URL,
             headers={
                 "accept": "application/json",
                 "Content-Type": "application/json"
             },
             json=payload,
-            timeout=30
+            timeout=(10, 60)
         )
 
         response.raise_for_status()
 
         data = response.json()
 
-        # adjust according to API response structure
+        # adjust for API structure
         if isinstance(data, list):
             results = data
+
         elif "results" in data:
             results = data["results"]
+
         elif "data" in data:
             results = data["data"]
+
         else:
             results = []
+
+        cache[accession] = results
+
+        # small delay to avoid hammering API
+        time.sleep(0.2)
 
         return results
 
     except Exception as e:
+
         print(f"ERROR querying {accession}: {e}")
+
+        cache[accession] = None
+
         return None
 
 
+# ------------------------------------------------------------------
+# extract VirJenDB accession
+# ------------------------------------------------------------------
+
 def extract_vj_accession(record):
-    """
-    Extract VirJenDB accession from API record.
-    """
+
     return record.get("VirJenDB Accession")
 
 
-for fasta_file in Path(INPUT_DIR).glob("*"):
+# ------------------------------------------------------------------
+# processing
+# ------------------------------------------------------------------
+
+total_found = 0
+total_not_found = 0
+total_errors = 0
+
+
+fasta_files = sorted(Path(INPUT_DIR).glob("*"))
+
+
+for fasta_file in fasta_files:
 
     if not fasta_file.is_file():
         continue
 
-    print(f"Processing {fasta_file.name}")
+    print("\n==================================================")
+    print(f"Processing file: {fasta_file.name}")
+    print("==================================================")
 
-    records = parse_fasta(fasta_file)
+    exists_path = Path(EXISTS_DIR) / fasta_file.name
+    not_exists_path = Path(NOT_EXISTS_DIR) / fasta_file.name
 
-    exists_output = []
-    not_exists_output = []
+    exists_handle = open(exists_path, "w")
+    not_exists_handle = open(not_exists_path, "w")
 
-    for header, sequence in records:
+    record_count = 0
+
+    for header, sequence in parse_fasta(fasta_file):
+
+        record_count += 1
 
         accession = get_insdc_accession(header)
 
+        print(f"[{record_count}] Checking {accession}")
+
         results = query_virjendb(accession)
 
+        # ----------------------------------------------------------
+        # API failure
+        # ----------------------------------------------------------
+
         if results is None:
-            # API failure -> treat as not found
-            not_exists_output.append((header, sequence))
+
+            total_errors += 1
+
+            not_exists_handle.write(f">{header}\n")
+            not_exists_handle.write(f"{sequence}\n")
+
+            not_exists_handle.flush()
+
+            print("  -> ERROR")
+
             continue
+
+        # ----------------------------------------------------------
+        # exactly one result
+        # ----------------------------------------------------------
 
         if len(results) == 1:
 
@@ -129,29 +223,57 @@ for fasta_file in Path(INPUT_DIR).glob("*"):
 
                 new_header = f"{vj_accession} | {header}"
 
-                exists_output.append((new_header, sequence))
+                exists_handle.write(f">{new_header}\n")
+                exists_handle.write(f"{sequence}\n")
+
+                exists_handle.flush()
+
+                total_found += 1
+
+                print(f"  -> FOUND ({vj_accession})")
 
             else:
-                not_exists_output.append((header, sequence))
+
+                not_exists_handle.write(f">{header}\n")
+                not_exists_handle.write(f"{sequence}\n")
+
+                not_exists_handle.flush()
+
+                total_not_found += 1
+
+                print("  -> NO VirJenDB accession")
+
+        # ----------------------------------------------------------
+        # zero or multiple results
+        # ----------------------------------------------------------
 
         else:
-            # zero or multiple results
-            not_exists_output.append((header, sequence))
 
-    # write existsindb output
-    exists_path = Path(EXISTS_DIR) / fasta_file.name
+            not_exists_handle.write(f">{header}\n")
+            not_exists_handle.write(f"{sequence}\n")
 
-    with open(exists_path, "w") as out:
-        for header, sequence in exists_output:
-            out.write(f">{header}\n")
-            out.write(f"{sequence}\n")
+            not_exists_handle.flush()
 
-    # write notindb output
-    not_exists_path = Path(NOT_EXISTS_DIR) / fasta_file.name
+            total_not_found += 1
 
-    with open(not_exists_path, "w") as out:
-        for header, sequence in not_exists_output:
-            out.write(f">{header}\n")
-            out.write(f"{sequence}\n")
+            print(f"  -> NOT FOUND ({len(results)} results)")
 
-print("Done.")
+    exists_handle.close()
+    not_exists_handle.close()
+
+    print(f"Finished {fasta_file.name}")
+    print(f"Records processed: {record_count}")
+
+
+# ------------------------------------------------------------------
+# summary
+# ------------------------------------------------------------------
+
+print("\n==================================================")
+print("DONE")
+print("==================================================")
+
+print(f"Found in DB     : {total_found}")
+print(f"Not found       : {total_not_found}")
+print(f"Errors          : {total_errors}")
+print(f"Cache size      : {len(cache)}")
