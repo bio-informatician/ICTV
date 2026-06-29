@@ -199,8 +199,7 @@ total_found = 0
 total_not_found = 0
 total_errors = 0
 
-fasta_files = sorted(Path(INPUT_DIR).glob("*"))
-
+fasta_files = sorted( Path(INPUT_DIR).glob("*"), reverse=True )
 
 for fasta_file in fasta_files:
 
