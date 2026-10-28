@@ -1348,7 +1348,7 @@ def build_record_actions(vjid, es_id, old_doc, normalized, resolved_version,
                 "method": config["version_change"]["method"],
                 "reason": config["version_change"]["reason"],
                 "changes": [{
-                    "field": INSDC_ACCESSION_FIELD_ID,
+                    "field": acc_index,
                     "old_value": json.dumps(old_acc),
                     "new_value": json.dumps(resolved_version),
                 }],
@@ -1406,7 +1406,7 @@ def build_record_actions(vjid, es_id, old_doc, normalized, resolved_version,
         elif not values_equal(schema_field_id, old_val, coerced):
             updates_dict[idx] = coerced
             changes_log.append({
-                "field": schema_field_id,
+                "field": idx,
                 "old_value": json.dumps(old_val),
                 "new_value": json.dumps(coerced),
             })
@@ -1430,7 +1430,7 @@ def build_record_actions(vjid, es_id, old_doc, normalized, resolved_version,
             else:
                 updates_dict[dk_idx] = new_dk_list
                 changes_log.append({
-                    "field": "sequence_source",
+                    "field": dk_idx,
                     "old_value": json.dumps(dk_list),
                     "new_value": json.dumps(new_dk_list),
                 })
