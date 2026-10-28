@@ -1,0 +1,5 @@
+elastic_host: "https://virjendb.org:9202"
+api_key: "QUpkdVpaOEJ1N0g5TmtQekJZYzE6djhwblVNOG44bk1KTy15dTY1WHFsdw=="
+metadata_index: "metadata_index_2026_09_10"
+changelog_index: "change_log"
+script_name: "virjendb_dedup_acc_base"

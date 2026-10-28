@@ -1,0 +1,126 @@
+# config.yml
+#
+# All values that used to be hardcoded module-level constants in
+# k.update_existing_records.py now live here. The script loads this file
+# at startup (see SETTINGS_PATH / VJDB_SETTINGS_PATH in the script).
+#
+# NOTE: `elasticsearch.auth_token` is a live credential (moved verbatim
+# from the old AUTH_TOKEN_DEFAULT constant). Treat this file as a secret:
+# keep it out of version control (add it to .gitignore) or restrict its
+# permissions, the same as you would any other credentials file.
+
+elasticsearch:
+#  es_url: "https://virjendb.org:9201"
+#  index_name: "metadata_index_2026_09_08"
+  es_url: "https://virjendb.org:9202"
+  index_name: "metadata_index_2026_09_10"
+  genome_index: "genome_sequences"
+  change_log_index: "change_log"
+  auth_token: "QUpkdVpaOEJ1N0g5TmtQekJZYzE6djhwblVNOG44bk1KTy15dTY1WHFsdw=="
+#  auth_token: "c2NTZk1Kb0JoU0ZzOU9pbnBKNXM6NnpNU0VwN0VVYmpwUWd2UDZGNWhQdw=="
+#  auth_token: "QXBkdlpaOEJ1N0g5TmtQelpJY3Y6ZkZLRW1TUU80QmtrcG51eEVxODZWZw=="
+schema:
+  schema_url: "https://raw.githubusercontent.com/VirJenDB/virjendb_metadata/refs/heads/v1.1/json/DB_Scheme.json"
+
+# "Hardcoded" field ids -- NOT resolved via schema. Kept consistent with the
+# rest of the pipeline's convention of treating these as fixed control
+# fields rather than ordinary schema-resolved content fields.
+field_ids:
+  vjid_field: "0dn"                        # virjen id (composite key part 1)
+  version_field: "0do"                     # metadata version (composite key part 2)
+  seq_version_field: "0cx"                 # sequence_version
+  active_flag_field: "0hd"                 # true = current active record
+  renewed_date_field: "0fh"                # date the record was last (re)written
+  vmr_version_field: "0bg"                 # ictv_vmr_version -- always overwritten
+  is_refseq_field_id: "is_refseq_sequence" # -> 0ai (schema-resolved)
+  is_genbank_field_id: "is_genbank_sequence" # -> 0ah (schema-resolved)
+  refseq_source_key: "is_annotated_refseq" # key produced by normalize_report()
+  insdc_accession_key: "insdc_accession"   # normalize_report() target key
+  insdc_accession_field_id: "insdc_accession" # schema field_id (-> 0aa)
+
+values:
+  genbank_source_value: "GenBank"
+
+# jsonl_field -> schema field_id, for fields whose NCBI-report name differs
+# from the vjdbv1.1 schema field id.
+field_id_overrides:
+  virus_organism_name: "organism_name"
+  virus_tax_id_ncbi: "tax_id_ncbi"
+  sequence_hash_refseq: "genome_sequence_hash"
+  sra_accessions: "sra_accession"
+  geographic_region: "collection_region"
+  update_date_refseq: "bvbrc_update_date"
+  source_database: "sequence_source"   # handled specially (0dk append)
+
+# Fields intentionally dropped with no warning, or handled specially and
+# never run through the generic fill/update comparison loop.
+silent_drop_fields:
+  - protein_count
+  - gene_count
+  - is_lab_host
+  - source_database        # -> 0dk, handled specially (append rule)
+  - is_annotated_refseq    # -> 0ai/0ah, handled specially (always-set)
+
+# jsonl_field -> element type ("int" or "str") for ';'-delimited string
+# fields that must be split into a list.
+semicolon_list_fields:
+  lineage_ids_ncbi: int
+  lineage_names_ncbi: str
+
+# NCBI Datasets report path -> vjdbv1.1 schema field id.
+report_schema_map:
+  accession: insdc_accession
+  "bioprojects[]": bioproject_accession
+  completeness: genome_completeness
+  length: sequence_length
+  release_date: release_date
+  update_date: update_date_refseq
+  gene_count: gene_count
+  is_annotated: is_annotated_refseq
+  protein_count: protein_count
+  source_database: source_database
+  is_lab_host: is_lab_host
+  lab_host: lab_host_species
+  segment: segment_name
+  "submitter.names[]": submitter
+  submitter.affiliation: submitter_organization
+  submitter.country: submitter_country
+  isolate.name: isolate_ncbi
+  nucleotide.sequence_hash: sequence_hash_refseq
+  virus.organism_name: virus_organism_name
+  virus.tax_id: virus_tax_id_ncbi
+  host.common_name: host_common_name
+  host.organism_name: host_species
+  host.tax_id: host_ncbi_tax_id
+  host.species: host_species_ncbi
+  host.genus: host_genus_ncbi
+  host.family: host_family_ncbi
+  isolate.collection_date: collection_date
+  isolate.geo_location: collection_geo_location
+  isolate.source: collection_source_host_tissue
+  location.geographic_location: collection_geo_location
+  location.geographic_region: geographic_region
+  location.usa_state: ncbi_usa
+  biosample: biosample_accession
+  "sra_accessions[]": sra_accessions
+
+# (name-suffix, taxonomy schema field) pairs used to classify lineage nodes.
+# Order matters: first matching suffix wins.
+taxonomic_suffixes:
+  - ["_viria", "realm_ncbi"]
+  - ["_virae", "kingdom_ncbi"]
+  - ["_viricota", "phylum_ncbi"]
+  - ["_viricetes", "class_ncbi"]
+  - ["_virales", "order_ncbi"]
+  - ["_viridae", "family_ncbi"]
+  - ["_virus", "genus_ncbi"]
+
+# Fallback used by load_config() when --config (a separate JSON file) is
+# omitted or missing. This is unrelated to this config.yml file itself.
+change_log_default_config:
+  version_change:
+    method: "NCBI_Version_Bump"
+    reason: "Accession version incremented at source"
+  content_update:
+    method: "Metadata_Refresh"
+    reason: "NCBI metadata content updated"

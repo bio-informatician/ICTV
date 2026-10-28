@@ -21,8 +21,8 @@ def clean_accession(raw_value):
     Clean accession strings.
 
     Handles:
-        L:KP710246
-        M: KP710264
+        KP710246
+        NC_011268
         KP710246.1
         LK928904 (nts 2253-10260)
         (nts 2253-10260):LK928904
@@ -31,13 +31,16 @@ def clean_accession(raw_value):
 
     value = str(raw_value).strip()
 
+    if not value:
+        return None
+
     # Remove segment labels
     # L:KP710246 -> KP710246
     if ":" in value:
         value = value.split(":")[-1].strip()
 
     # Remove parenthesis annotations
-    # LK928904 (nts 2253-10260)
+    # LK928904 (nts 2253-10260) -> LK928904
     if "(" in value:
         value = value.split("(")[0].strip()
 
@@ -52,7 +55,7 @@ def clean_accession(raw_value):
     # Remove leading/trailing junk
     value = value.strip(" ,;")
 
-    # Extract only valid accession
+    # Extract valid accession
     match = ACCESSION_PATTERN.search(value)
 
     if match:
@@ -61,48 +64,48 @@ def clean_accession(raw_value):
     return None
 
 
-# accession -> set(files)
+# accession -> set(VMR files)
 accession_map = defaultdict(set)
 
 # =========================
-# PROCESS FILES
+# PROCESS TXT FILES
 # =========================
 
-for filename in os.listdir(INPUT_DIR):
+txt_files = [
+    filename
+    for filename in os.listdir(INPUT_DIR)
+    if filename.endswith(".txt")
+]
 
-    if not filename.endswith(".json"):
-        continue
+print(f"Found {len(txt_files)} TXT files")
+
+for filename in sorted(txt_files):
 
     filepath = os.path.join(INPUT_DIR, filename)
+
+    # Corresponding VMR file name
+    # Example:
+    # VMR_MSL41.v1.20260320.txt
+    # ->
+    # VMR_MSL41.v1.20260320.json
+    vmr_filename = filename[:-4] + ".json"
 
     print(f"Processing {filename}")
 
     try:
 
         with open(filepath, "r", encoding="utf-8") as f:
-            data = json.load(f)
 
-        for row in data:
+            for line in f:
 
-            for key, value in row.items():
+                line = line.strip()
 
-                # Only accession columns
-                if "accession" not in key.lower():
+                if not line:
                     continue
 
-                # Skip empty fields
-                if not value:
-                    continue
-
-                text = str(value).strip()
-
-                if not text:
-                    continue
-
-                # Split multiple accessions
-                # Example:
-                # L:KP710246; M:KP710264; S:KP710267
-                parts = text.split(";")
+                # In case a line contains multiple accessions
+                # separated by semicolon
+                parts = line.split(";")
 
                 for part in parts:
 
@@ -112,12 +115,13 @@ for filename in os.listdir(INPUT_DIR):
                         continue
 
                     accession_map[accession].add(
-                        filename
+                        vmr_filename
                     )
 
     except Exception as e:
 
         print(f"ERROR {filename}: {e}")
+
 
 # =========================
 # BUILD OUTPUT
@@ -129,10 +133,9 @@ for accession in sorted(accession_map):
 
     output.append({
         "accession": accession,
-        "files": sorted(
-            accession_map[accession]
-        )
+        "files": sorted(accession_map[accession])
     })
+
 
 # =========================
 # WRITE OUTPUT
@@ -150,8 +153,13 @@ with open(
         indent=4
     )
 
-print(
-    f"\nDONE\n"
-    f"Unique accessions: {len(output)}\n"
-    f"Output written to: {OUTPUT_FILE}"
-)
+
+# =========================
+# SUMMARY
+# =========================
+
+print()
+print("DONE")
+print(f"TXT files processed: {len(txt_files)}")
+print(f"Unique accessions:   {len(output)}")
+print(f"Output written to:   {OUTPUT_FILE}")

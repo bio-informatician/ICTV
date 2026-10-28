@@ -12,6 +12,7 @@ warnings.filterwarnings(
 # Configuration: Map the file and tab to the EXACT column header names
 # The script will look for these strings in the first row.
 FILE_CONFIG = {
+    "VMR_MSL41.v1.20260729.xlsx": {"sheet": "VMR MSL41", "cols": ["Exemplar or additional isolate", "Virus GENBANK accession"]},
     "VMR_MSL41.v1.20260320.xlsx": {"sheet": "VMR MSL41", "cols": ["Exemplar or additional isolate", "Virus GENBANK accession"]},
     "VMR_MSL40.v2.20260223.xlsx": {"sheet": "VMR MSL40", "cols": ["Exemplar or additional isolate", "Virus GENBANK accession"]},
     "VMR_MSL40.v2.20251013.xlsx": {"sheet": "VMR MSL40", "cols": ["Exemplar or additional isolate", "Virus GENBANK accession"]},

@@ -13,7 +13,7 @@ INPUT_DIR = "vmr_multifasta"
 EXISTS_DIR = "existsindb"
 NOT_EXISTS_DIR = "notindb"
 
-API_URL = "https://api2.virjendb.org/v2/search"
+API_URL = "https://api.dev.virjendb.org/v2/search"
 
 
 # ------------------------------------------------------------------
@@ -212,9 +212,45 @@ for fasta_file in fasta_files:
 
     exists_path = Path(EXISTS_DIR) / fasta_file.name
     not_exists_path = Path(NOT_EXISTS_DIR) / fasta_file.name
+    exists_txt_path = Path(EXISTS_DIR) / f"{fasta_file.stem}.txt"
+    not_exists_txt_path = Path(NOT_EXISTS_DIR) / f"{fasta_file.stem}.txt"
+
+    fasta_exists = exists_path.exists() and not_exists_path.exists()
+    txt_exists = exists_txt_path.exists() and not_exists_txt_path.exists()
+
+    if fasta_exists and txt_exists:
+        print(f"Skipping {fasta_file.name}: ALL output files already exist.")
+        continue
+        
+    elif fasta_exists and not txt_exists:
+        print(f"FASTA exists but TXT missing for {fasta_file.name}. Generating TXT only...")
+        
+        # 1. Generate TXT from existsindb FASTA
+        with open(exists_txt_path, "w") as txt_out:
+            for out_header, _ in parse_fasta(exists_path):
+                # The exists FASTA header looks like: VJ_ACC | INSDC_ACC | ...
+                # So we split by "|" and take the SECOND item (index 1)
+                parts = out_header.split("|")
+                if len(parts) >= 2:
+                    insdc = parts[1].strip().split(".")[0]
+                    txt_out.write(f"{insdc}\n")
+                    
+        # 2. Generate TXT from notindb FASTA
+        with open(not_exists_txt_path, "w") as txt_out:
+            for out_header, _ in parse_fasta(not_exists_path):
+                # The not_exists FASTA header looks like: INSDC_ACC | ...
+                # So we split by "|" and take the FIRST item (index 0)
+                insdc = out_header.split("|")[0].strip().split(".")[0]
+                txt_out.write(f"{insdc}\n")
+                
+        print(" -> TXT files created successfully. Skipping API queries.")
+        continue
 
     exists_handle = open(exists_path, "w")
     not_exists_handle = open(not_exists_path, "w")
+
+    exists_txt_handle = open(exists_txt_path, "w")
+    not_exists_txt_handle = open(not_exists_txt_path, "w")
 
     record_count = 0
 
@@ -240,6 +276,9 @@ for fasta_file in fasta_files:
             not_exists_handle.write(f"{sequence}\n")
 
             not_exists_handle.flush()
+
+            not_exists_txt_handle.write(f"{accession}\n")
+            not_exists_txt_handle.flush()
 
             print("  -> STORED IN notindb (API ERROR)")
 
@@ -268,6 +307,9 @@ for fasta_file in fasta_files:
 
                 exists_handle.flush()
 
+                exists_txt_handle.write(f"{accession}\n")
+                exists_txt_handle.flush()
+
                 total_found += 1
 
                 print(f"  -> FOUND ({vj_accession})")
@@ -279,6 +321,9 @@ for fasta_file in fasta_files:
                 not_exists_handle.write(f"{sequence}\n")
 
                 not_exists_handle.flush()
+
+                not_exists_txt_handle.write(f"{accession}\n")
+                not_exists_txt_handle.flush()
 
                 total_not_found += 1
 
@@ -296,6 +341,9 @@ for fasta_file in fasta_files:
 
             not_exists_handle.flush()
 
+            not_exists_txt_handle.write(f"{accession}\n")
+            not_exists_txt_handle.flush()
+            
             total_not_found += 1
 
             print("  -> NOT FOUND")
@@ -303,6 +351,8 @@ for fasta_file in fasta_files:
 
     exists_handle.close()
     not_exists_handle.close()
+    exists_txt_handle.close()       
+    not_exists_txt_handle.close()
 
     print(f"\nFinished {fasta_file.name}")
     print(f"Records processed: {record_count}")
@@ -320,4 +370,3 @@ print(f"Found in DB     : {total_found}")
 print(f"Not found       : {total_not_found}")
 print(f"Errors          : {total_errors}")
 print(f"Cache size      : {len(cache)}")
-
