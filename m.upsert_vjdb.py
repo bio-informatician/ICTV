@@ -108,7 +108,7 @@ import sys
 import threading
 import time
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
@@ -1284,7 +1284,9 @@ def build_record_actions(vjid, es_id, old_doc, normalized, resolved_version,
     no-change for a record that already has an active document (found via
     accession lookup upstream; vjid is read off that document)."""
     errors, warnings = [], []
-    today_str = datetime.utcnow().strftime("%Y-%m-%d")
+    now_utc = datetime.now(timezone.utc)
+    today_str = now_utc.strftime("%Y-%m-%d")
+    change_log_time = now_utc.isoformat(timespec="microseconds").replace("+00:00", "Z")
 
     old_version = old_doc.get(VERSION_FIELD) or 1
     old_seq_version = old_doc.get(SEQ_VERSION_FIELD) or 1
@@ -1344,7 +1346,7 @@ def build_record_actions(vjid, es_id, old_doc, normalized, resolved_version,
             result["change_log_doc"] = {
                 VJID_FIELD: vjid,
                 VERSION_FIELD: new_version,
-                "time": today_str,
+                "time": change_log_time,
                 "method": config["version_change"]["method"],
                 "reason": config["version_change"]["reason"],
                 "changes": [{
@@ -1458,7 +1460,7 @@ def build_record_actions(vjid, es_id, old_doc, normalized, resolved_version,
         result["change_log_doc"] = {
             VJID_FIELD: vjid,
             VERSION_FIELD: new_version,
-            "time": today_str,
+            "time": change_log_time,
             "method": config["content_update"]["method"],
             "reason": config["content_update"]["reason"],
             "changes": changes_log,
