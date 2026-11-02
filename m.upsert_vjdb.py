@@ -1549,12 +1549,9 @@ def run(args):
         unrecognized, n_unrecognized = vmr_ictv_merge.report_unrecognized_keys(vmr_records)
         if n_unrecognized:
             logger.warning(
-                "VMR/ICTV JSON: %d raw JSON key(s) across the file never matched "
-                "any mapped field/alias/accession/lineage label -- sample: %s "
-                "(if one of these is actually a field you expect to be mapped, "
-                "its spelling differs from what vmr_ictv_merge.py recognizes; "
-                "add it as an alias there).",
-                n_unrecognized, unrecognized,
+                "VMR/ICTV JSON: %d column(s) have no configured database "
+                "destination and will not be stored: %s",
+                n_unrecognized, ", ".join(unrecognized),
             )
 
     verify_ssl = not args.no_verify_ssl
@@ -2011,11 +2008,11 @@ def main():
     parser.add_argument("--retry-backoff", type=float, default=1.0)
     parser.add_argument("--vmr-version", default=None)
     parser.add_argument("--vmr-json", default=None,
-                         help="Path to a VMR/ICTV metadata JSON file (array of record "
-                              "objects with a 'Virus GENBANK accession'-style field). "
-                              "When given, records are matched to insertion accessions "
-                              "(with or without version) and their mapped ICTV taxonomy/ "
-                              "isolate fields are merged in. See vmr_ictv_merge.py.")
+                         help="Path to an array of VMR/ICTV records using the "
+                              "'Virus_GENBANK_accession' column. Records are matched "
+                              "to FASTA accessions and supported columns are mapped "
+                              "through the configured DB schema. Columns without a "
+                              "database destination are reported.")
     parser.add_argument("--offline-latest-accession", default=None,
                          help="skip the live ES lookup for the vjid counter seed and start from "
                               "this vjid instead (for offline testing)")
