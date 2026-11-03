@@ -1136,7 +1136,7 @@ def check_bulk_errors(resp_json, logger, label):
     logger.error("%s: %d/%d item(s) failed", label, len(failed), len(resp_json.get("items", [])))
     for err in failed[:20]:
         logger.error("  %s", err)
-    return False
+    raise RuntimeError(f"{label} failed; see the errors above.")
 
 
 def set_index_write_block(session, es_url, index_name, blocked, verify_ssl):
@@ -1145,6 +1145,30 @@ def set_index_write_block(session, es_url, index_name, blocked, verify_ssl):
     resp = session.put(url, json=payload, verify=verify_ssl, timeout=60)
     resp.raise_for_status()
     return resp.json()
+
+
+def index_write_blocked(session, es_url, index_name, verify_ssl):
+    url = f"{es_url.rstrip('/')}/{index_name}/_settings"
+    resp = session.get(url, params={"flat_settings": "true"}, verify=verify_ssl, timeout=60)
+    resp.raise_for_status()
+    indices = resp.json()
+    index_settings = next(iter(indices.values()))["settings"]
+    return str(index_settings.get("index.blocks.write", "false")).lower() == "true"
+
+
+def execute_genome_bulk(session, es_url, index_name, actions, verify_ssl,
+                        max_chunk_bytes):
+    was_blocked = index_write_blocked(session, es_url, index_name, verify_ssl)
+    try:
+        if was_blocked:
+            set_index_write_block(session, es_url, index_name, False, verify_ssl)
+        return execute_bulk(
+            session, es_url, index_name, actions, verify_ssl,
+            max_chunk_bytes=max_chunk_bytes,
+        )
+    finally:
+        if was_blocked:
+            set_index_write_block(session, es_url, index_name, True, verify_ssl)
 
 
 # --------------------------------------------------------------------------
@@ -1906,14 +1930,13 @@ def run(args):
 
         print(f"\n=== Writing {len(genome_bulk)//2} gated genome doc(s) "
               f"(brand-new + version-diff) to {args.genome_index} ===")
-        try:
-            set_index_write_block(session, args.es_url, args.genome_index, False, verify_ssl)
-            resp = execute_bulk(session, args.es_url, args.genome_index, genome_bulk, verify_ssl,
-                                 max_chunk_bytes=args.max_chunk_bytes)
-        finally:
-            set_index_write_block(session, args.es_url, args.genome_index, True, verify_ssl)
+        resp = execute_genome_bulk(
+            session, args.es_url, args.genome_index, genome_bulk, verify_ssl,
+            args.max_chunk_bytes,
+        )
 
         items = resp.get("items", [])
+        genome_write_failed = False
         if len(items) != len(pending_genome_gated):
             # Response shape didn't line up 1:1 with what we sent -- we can no
             # longer trust positional matching, so refuse to guess: skip ALL
@@ -1927,12 +1950,14 @@ def run(args):
                 len(items), len(pending_genome_gated),
             )
             gated_ok = [False] * len(pending_genome_gated)
+            genome_write_failed = True
         else:
             gated_ok = []
             for g, item in zip(pending_genome_gated, items):
                 op_result = next(iter(item.values())) if item else {"error": "empty item"}
                 ok = not op_result.get("error")
                 if not ok:
+                    genome_write_failed = True
                     logger.error(
                         "%s: genome write FAILED (%s) -- its metadata/change_log "
                         "will NOT be written this run; vjid stays reserved and "
@@ -1966,6 +1991,12 @@ def run(args):
         resp = execute_bulk(session, args.es_url, args.change_log_index, change_log_bulk, verify_ssl,
                              max_chunk_bytes=args.max_chunk_bytes)
         check_bulk_errors(resp, logger, "change_log bulk")
+
+    if pending_genome_gated and genome_write_failed:
+        raise RuntimeError(
+            "One or more genome writes failed; successful records were handled "
+            "safely, but this run did not complete successfully."
+        )
 
     print("\nDone.")
 

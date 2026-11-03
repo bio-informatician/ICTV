@@ -1,7 +1,9 @@
 import importlib.util
+import logging
 from pathlib import Path
 
 import vmr_ictv_merge
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -101,6 +103,70 @@ class FakeSession:
     def post(self, url, json, verify, timeout):
         self.request = (url, json, verify, timeout)
         return FakeResponse()
+
+
+class SettingsResponse:
+    def __init__(self, settings):
+        self.settings = settings
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return {"genome": {"settings": self.settings}}
+
+
+class SettingsSession:
+    def __init__(self, settings):
+        self.settings = settings
+        self.puts = []
+
+    def get(self, url, params, verify, timeout):
+        return SettingsResponse(self.settings)
+
+    def put(self, url, json, verify, timeout):
+        self.puts.append(json)
+        return SettingsResponse({})
+
+
+def test_bulk_errors_raise_to_fail_the_run():
+    response = {
+        "errors": True,
+        "items": [{"index": {"error": {"type": "blocked", "reason": "read-only"}}}],
+    }
+
+    with pytest.raises(RuntimeError, match="metadata bulk failed"):
+        upsert_vjdb.check_bulk_errors(response, logging.getLogger("test"), "metadata bulk")
+
+
+def test_writable_genome_index_settings_are_not_changed(monkeypatch):
+    session = SettingsSession({})
+    expected = {"errors": False, "items": []}
+    monkeypatch.setattr(upsert_vjdb, "execute_bulk", lambda *args, **kwargs: expected)
+
+    result = upsert_vjdb.execute_genome_bulk(
+        session, "https://example.invalid", "genome", [], True, 900_000
+    )
+
+    assert result is expected
+    assert session.puts == []
+
+
+def test_blocked_genome_index_is_restored_after_write(monkeypatch):
+    session = SettingsSession({"index.blocks.write": "true"})
+    monkeypatch.setattr(
+        upsert_vjdb, "execute_bulk",
+        lambda *args, **kwargs: {"errors": False, "items": []},
+    )
+
+    upsert_vjdb.execute_genome_bulk(
+        session, "https://example.invalid", "genome", [], True, 900_000
+    )
+
+    assert session.puts == [
+        {"index.blocks.write": None},
+        {"index.blocks.write": True},
+    ]
 
 
 def test_accession_matching_uses_versionless_0aa_and_segmented_vmr_accessions():
