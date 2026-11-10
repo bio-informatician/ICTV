@@ -141,8 +141,9 @@ IF the Datasets report contains virus.lineage:
 IF the report contains host.lineage:
   - Do not put that lineage in the virus lineage fields 0gu or 0gt.
   - Do not use host lineage names to derive virus taxonomic ranks.
-  - Host-specific fields such as host species and host tax ID are separate
-    report mappings; see the CSV for their destinations and schema status.
+  - Store host lineage names separately in host_lineage. The configured
+    v1.1 schema must define that field before records containing this value
+    can be written; index 0he is change_log in the current schema.
 
 5. Accession matching and record classification
 -----------------------------------------------

@@ -46,6 +46,7 @@ def schema_fields():
         "bvbrc_update_date": ("0cw", "date"),
         "lineage_names_ncbi": ("0gu", "keyword"),
         "lineage_ids_ncbi": ("0gv", "integer"),
+        "host_lineage": ("0host", "text"),
         "organism_name": ("0aq", "text"),
     }
     return {
@@ -320,9 +321,32 @@ def test_vmr_match_sets_ictv_flag_true_for_additional_isolate():
     assert normalized["is_ictv_exemplar"] is True
 
 
+def test_existing_vmr_match_changes_ictv_flag_to_true():
+    old_doc = existing_document()
+    old_doc["0gw"] = False
+    normalized, _ = merge_row({
+        "Exemplar_or_additional_isolate": "A",
+    }, old_doc)
+
+    result = upsert_vjdb.build_record_actions(
+        "vj000000000001", "existing", old_doc, normalized, "AB123456.1",
+        "", schema_fields(),
+        {
+            "version_change": {"method": "test", "reason": "test"},
+            "content_update": {"method": "test", "reason": "test"},
+        },
+        None, "accession AB123456",
+    )
+
+    assert result["new_meta_doc"]["0gw"] is True
+    assert any(change["field"] == "0gw"
+               for change in result["change_log_doc"]["changes"])
+
+
 def test_refseq_update_date_is_immutable_on_existing_record_updates():
     old_doc = existing_document()
     old_doc["0cw"] = "2024-01-01"
+    old_doc["0gw"] = False
     normalized = {"update_date_refseq": "2026-09-14"}
 
     content_update = upsert_vjdb.build_record_actions(
@@ -334,7 +358,10 @@ def test_refseq_update_date_is_immutable_on_existing_record_updates():
         },
         None, "accession AB123456",
     )
-    assert content_update["event"] == "no-change"
+    assert content_update["event"] == "insertion"
+    assert "0cw" not in content_update["fill_update"]["doc"]
+    assert content_update["change_log_doc"] is None
+    assert old_doc["0cw"] == "2024-01-01"
 
     version_diff = upsert_vjdb.build_record_actions(
         "vj000000000001", "existing", old_doc, normalized, "AB123456.2",
@@ -360,6 +387,12 @@ def test_refseq_update_date_is_immutable_on_existing_record_updates():
     )
     assert "0cw" not in missing_value["new_meta_doc"]
 
+    new_record = upsert_vjdb.build_brand_new_insertion(
+        "vj000000000002", normalized, "AB123456.1", "",
+        schema_fields(), None, "new record",
+    )
+    assert new_record["new_meta_doc"]["0cw"] == "2026-09-14"
+
 
 def test_normalize_report_uses_virus_lineage_not_host_lineage():
     report = {
@@ -384,7 +417,25 @@ def test_normalize_report_uses_virus_lineage_not_host_lineage():
         "Viruses;Riboviria;Tensaw virus"
     )
     assert normalized["lineage_ids_ncbi"] == "10239;2559587;12345"
+    assert normalized["host_lineage"] == "cellular organisms;Bacteria"
 
+    errors = []
+    mapped = upsert_vjdb.map_normalized_fields(
+        {"host_lineage": normalized["host_lineage"]},
+        schema_fields(), "test", errors, [],
+    )
+    assert errors == []
+    assert mapped["0host"] == "cellular organisms;Bacteria"
+
+    incomplete_schema = schema_fields()
+    incomplete_schema.pop("host_lineage")
+    errors = []
+    upsert_vjdb.map_normalized_fields(
+        {"host_lineage": normalized["host_lineage"]},
+        incomplete_schema, "test", errors, [],
+    )
+    assert any("host_lineage" in error and "not found in schema" in error
+               for error in errors)
 
 def test_vmr_version_is_appended_without_replacing_or_duplicating():
     old_doc = existing_document()
@@ -536,7 +587,7 @@ def test_blank_vmr_value_does_not_clear_existing_field():
         "VMR-v1", "test",
     )
 
-    assert normalized == {}
+    assert normalized == {"is_ictv_exemplar": True}
     assert result["event"] == "insertion"
     assert "0gz" not in result["fill_update"]["doc"]
     assert old_doc["0gz"] == "ICTV202500001"

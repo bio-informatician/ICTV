@@ -386,6 +386,12 @@ def normalize_report(report):
             result["lineage_ids_ncbi"] = ";".join(ids)
         result.update(virus_taxonomy(virus_lineage))
 
+    host = report.get("host")
+    if host is not None:
+        host_names = lineage_names(host.get("lineage"))
+        if host_names:
+            result["host_lineage"] = ";".join(host_names)
+
     for key in [k for k, v in result.items() if v is None or v == "" or v == []]:
         del result[key]
 
@@ -1197,8 +1203,6 @@ def map_normalized_fields(normalized, schema, line_label, errors, warnings):
                 f"not in SILENT_DROP_FIELDS -- unmapped."
             )
             continue
-        if schema_field_id == FIELD_ID_OVERRIDES.get("update_date_refseq"):
-            continue
         try:
             coerced, w = coerce_value(value, vtype, f"{line_label} field '{jsonl_field}' ({idx})")
         except ValueError as e:
@@ -1464,6 +1468,8 @@ def build_record_actions(vjid, es_id, old_doc, normalized, resolved_version,
                 f"{line_label}: field '{jsonl_field}' not found in schema, no override, "
                 f"not in SILENT_DROP_FIELDS -- unmapped."
             )
+            continue
+        if schema_field_id == FIELD_ID_OVERRIDES.get("update_date_refseq"):
             continue
         try:
             coerced, w = coerce_value(value, vtype, f"{line_label} field '{jsonl_field}' ({idx})")
