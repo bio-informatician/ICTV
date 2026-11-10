@@ -42,6 +42,10 @@ def schema_fields():
         "abbreviation": ("0cn", "keyword"),
         "isolate": ("0gn", "text"),
         "genome_completeness": ("0ao", "keyword"),
+        "molecule_type": ("0an", "keyword"),
+        "bvbrc_update_date": ("0cw", "date"),
+        "lineage_names_ncbi": ("0gu", "keyword"),
+        "lineage_ids_ncbi": ("0gv", "integer"),
         "organism_name": ("0aq", "text"),
     }
     return {
@@ -219,6 +223,7 @@ def test_vmr_columns_resolve_to_configured_schema_field_ids_and_indices():
         "Virus_name_abbreviation_s_": "EXV",
         "Virus_isolate_designation": "isolate 1",
         "Genome_coverage": "Complete genome",
+        "Genome": "dsDNA",
     }
     normalized, warnings = merge_row(row)
     assert not warnings
@@ -245,6 +250,7 @@ def test_vmr_columns_resolve_to_configured_schema_field_ids_and_indices():
         "abbreviation": "EXV",
         "isolate": "isolate 1",
         "genome_completeness": "Complete genome",
+        "molecule_type": "dsDNA",
     }
 
     errors = []
@@ -274,6 +280,158 @@ def test_vmr_columns_resolve_to_configured_schema_field_ids_and_indices():
     assert mapped["0cn"] == "EXV"
     assert mapped["0gn"] == "isolate 1"
     assert mapped["0ao"] == "Complete genome"
+    assert mapped["0an"] == "dsDNA"
+
+
+def test_vmr_merge_preserves_non_vmr_ncbi_update_date():
+    old_doc = existing_document()
+    old_doc["0cw"] = "2024-01-01"
+    old_doc["0fw"] = "Old ICTV species"
+    normalized = {"update_date_refseq": "2026-09-14"}
+
+    vmr_ictv_merge.merge_vmr_into_normalized(
+        normalized, [{"Species": "New ICTV species"}], old_doc,
+        schema_fields(), "accession AB123456", [],
+    )
+
+    assert normalized["update_date_refseq"] == "2024-01-01"
+    result = upsert_vjdb.build_record_actions(
+        "vj000000000001", "existing", old_doc, normalized, "AB123456.1",
+        "", schema_fields(),
+        {
+            "version_change": {"method": "test", "reason": "test"},
+            "content_update": {"method": "test", "reason": "test"},
+        },
+        "VMR-v1", "test",
+    )
+
+    assert result["event"] == "content-update"
+    assert result["new_meta_doc"]["0cw"] == "2024-01-01"
+    assert [change["field"] for change in result["change_log_doc"]["changes"]] == [
+        "0fw"
+    ]
+
+
+def test_vmr_match_sets_ictv_flag_true_for_additional_isolate():
+    normalized, _ = merge_row({
+        "Exemplar_or_additional_isolate": "A",
+    })
+
+    assert normalized["is_ictv_exemplar"] is True
+
+
+def test_refseq_update_date_is_immutable_on_existing_record_updates():
+    old_doc = existing_document()
+    old_doc["0cw"] = "2024-01-01"
+    normalized = {"update_date_refseq": "2026-09-14"}
+
+    content_update = upsert_vjdb.build_record_actions(
+        "vj000000000001", "existing", old_doc, normalized, "AB123456.1",
+        "", schema_fields(),
+        {
+            "version_change": {"method": "test", "reason": "test"},
+            "content_update": {"method": "test", "reason": "test"},
+        },
+        None, "accession AB123456",
+    )
+    assert content_update["event"] == "no-change"
+
+    version_diff = upsert_vjdb.build_record_actions(
+        "vj000000000001", "existing", old_doc, normalized, "AB123456.2",
+        "", schema_fields(),
+        {
+            "version_change": {"method": "test", "reason": "test"},
+            "content_update": {"method": "test", "reason": "test"},
+        },
+        None, "accession AB123456",
+    )
+    assert version_diff["event"] == "version-diff"
+    assert version_diff["new_meta_doc"]["0cw"] == "2024-01-01"
+
+    old_doc.pop("0cw")
+    missing_value = upsert_vjdb.build_record_actions(
+        "vj000000000001", "existing", old_doc, normalized, "AB123456.2",
+        "", schema_fields(),
+        {
+            "version_change": {"method": "test", "reason": "test"},
+            "content_update": {"method": "test", "reason": "test"},
+        },
+        None, "accession AB123456",
+    )
+    assert "0cw" not in missing_value["new_meta_doc"]
+
+
+def test_normalize_report_uses_virus_lineage_not_host_lineage():
+    report = {
+        "host": {
+            "lineage": [
+                {"name": "cellular organisms", "tax_id": 1},
+                {"name": "Bacteria", "tax_id": 2},
+            ],
+        },
+        "virus": {
+            "lineage": [
+                {"name": "Viruses", "tax_id": 10239},
+                {"name": "Riboviria", "tax_id": 2559587},
+                {"name": "Tensaw virus", "tax_id": 12345},
+            ],
+        },
+    }
+
+    normalized = upsert_vjdb.normalize_report(report)
+
+    assert normalized["lineage_names_ncbi"] == (
+        "Viruses;Riboviria;Tensaw virus"
+    )
+    assert normalized["lineage_ids_ncbi"] == "10239;2559587;12345"
+
+
+def test_vmr_version_is_appended_without_replacing_or_duplicating():
+    old_doc = existing_document()
+    old_doc["0bg"] = "VMR_01"
+    normalized = {}
+    result = upsert_vjdb.build_record_actions(
+        "vj000000000001", "existing", old_doc, normalized, "AB123456.1",
+        "", schema_fields(),
+        {
+            "version_change": {"method": "test", "reason": "test"},
+            "content_update": {"method": "test", "reason": "test"},
+        },
+        "VMR_05", "test",
+    )
+
+    assert result["event"] == "insertion"
+    assert result["fill_update"]["doc"]["0bg"] == ["VMR_01", "VMR_05"]
+
+    old_doc["0bg"] = ["VMR_01", "VMR_05", "VMR_05"]
+    repeated = upsert_vjdb.build_record_actions(
+        "vj000000000001", "existing", old_doc, normalized, "AB123456.1",
+        "", schema_fields(),
+        {
+            "version_change": {"method": "test", "reason": "test"},
+            "content_update": {"method": "test", "reason": "test"},
+        },
+        "VMR_05", "test",
+    )
+
+    assert repeated["fill_update"]["doc"]["0bg"] == ["VMR_01", "VMR_05"]
+    assert repeated["fill_update"]["doc"]["0bg"].count("VMR_05") == 1
+
+
+def test_version_diff_preserves_and_appends_vmr_versions():
+    old_doc = existing_document()
+    old_doc["0bg"] = "VMR_01"
+    result = upsert_vjdb.build_record_actions(
+        "vj000000000001", "existing", old_doc, {}, "AB123456.2",
+        "ACGT", schema_fields(),
+        {
+            "version_change": {"method": "version test", "reason": "new accession version"},
+            "content_update": {"method": "content test", "reason": "metadata changed"},
+        },
+        "VMR_05", "test",
+    )
+
+    assert result["new_meta_doc"]["0bg"] == ["VMR_01", "VMR_05"]
 
 
 def test_existing_record_fills_empty_fields_and_preserves_blanks():
@@ -402,7 +560,7 @@ def test_new_record_contains_vmr_metadata_and_writes_fasta_sequence():
     assert result["new_meta_doc"]["0fi"] == "Realm name"
     assert result["new_meta_doc"]["0fw"] == "Species name"
     assert result["new_meta_doc"]["0gz"] == "ICTV202600001"
-    assert result["new_meta_doc"]["0gw"] is False
+    assert result["new_meta_doc"]["0gw"] is True
     assert result["new_meta_doc"]["0aq"] == "NCBI-resolved organism"
     assert result["new_meta_doc"]["0dn"] == "vj000000000002"
     assert result["genome_doc"]["0aa"] == "AB123456.1"
@@ -421,10 +579,9 @@ def test_columns_without_database_destinations_are_reported():
     }]
     columns, count = vmr_ictv_merge.report_unrecognized_keys(records)
 
-    assert count == 6
+    assert count == 5
     assert columns == [
         "Accessions_Link",
-        "Genome",
         "Isolate_ID",
         "Isolate_Sort",
         "Species_Sort",

@@ -29,10 +29,12 @@ VMR_COLUMN_FIELD_IDS = {
     "Virus_name_abbreviation_s_": "abbreviation",
     "Virus_isolate_designation": "isolate",
     "Genome_coverage": "genome_completeness",
+    "Genome": "molecule_type",
     "Host_source": "host_group_ictv",
 }
 
 ACCESSION_COLUMN = "Virus_GENBANK_accession"
+NON_VMR_FIELD_IDS = {"update_date_refseq": "bvbrc_update_date"}
 _ACCESSION_RE = re.compile(
     r"(?<![A-Z0-9])([A-Z]{1,6}_?\d{5,9}(?:\.\d+)?)(?![A-Z0-9])",
     re.IGNORECASE,
@@ -179,3 +181,18 @@ def merge_vmr_into_normalized(normalized, vmr_records, old_doc, schema,
                 "differs from NCBI/FASTA metadata and takes precedence."
             )
         normalized[field_id] = value
+
+    # 0gw identifies records associated with ICTV/VMR data, not whether the
+    # particular isolate is marked as an exemplar in the source workbook.
+    normalized["is_ictv_exemplar"] = True
+
+    # A VMR refresh must not update NCBI-owned fields that are unrelated to
+    # the VMR row. Preserve their current value when rebuilding/updating an
+    # existing document, or omit them when the old document has no value.
+    if old_doc is not None:
+        for normalized_field, schema_field_id in NON_VMR_FIELD_IDS.items():
+            entry = schema.get(schema_field_id)
+            if entry is None or entry["index"] not in old_doc:
+                normalized.pop(normalized_field, None)
+            else:
+                normalized[normalized_field] = old_doc[entry["index"]]

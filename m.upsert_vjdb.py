@@ -375,19 +375,16 @@ def normalize_report(report):
     if region is not None:
         result["geographic_region"] = region
 
-    host = report.get("host")
-    if host is not None:
-        h_lineage = host.get("lineage")
-        names = lineage_names(h_lineage)
-        ids = lineage_ids(h_lineage)
+    virus = report.get("virus")
+    if virus is not None:
+        virus_lineage = virus.get("lineage")
+        names = lineage_names(virus_lineage)
+        ids = lineage_ids(virus_lineage)
         if names:
             result["lineage_names_ncbi"] = ";".join(names)
         if ids:
             result["lineage_ids_ncbi"] = ";".join(ids)
-
-    virus = report.get("virus")
-    if virus is not None:
-        result.update(virus_taxonomy(virus.get("lineage")))
+        result.update(virus_taxonomy(virus_lineage))
 
     for key in [k for k, v in result.items() if v is None or v == "" or v == []]:
         del result[key]
@@ -1200,6 +1197,8 @@ def map_normalized_fields(normalized, schema, line_label, errors, warnings):
                 f"not in SILENT_DROP_FIELDS -- unmapped."
             )
             continue
+        if schema_field_id == FIELD_ID_OVERRIDES.get("update_date_refseq"):
+            continue
         try:
             coerced, w = coerce_value(value, vtype, f"{line_label} field '{jsonl_field}' ({idx})")
         except ValueError as e:
@@ -1210,9 +1209,39 @@ def map_normalized_fields(normalized, schema, line_label, errors, warnings):
     return doc
 
 
-def compute_always_set_fields(normalized, schema, vmr_version, errors, line_label):
-    """0ai/0ah (recomputed every time) + 0bg (vmr version). Shared by
-    brand-new insertion, version-diff, and content-update/fill.
+def preserve_bvbrc_update_date(mapped, old_doc, schema):
+    """Keep 0cw immutable on existing records, including accession version changes."""
+    field_id = FIELD_ID_OVERRIDES.get("update_date_refseq")
+    entry = schema.get(field_id) if field_id else None
+    if entry is None:
+        return
+    index = entry["index"]
+    mapped.pop(index, None)
+    if index in old_doc:
+        mapped[index] = deepcopy(old_doc[index])
+
+
+def _append_vmr_version(existing, vmr_version):
+    if existing is None or existing == "":
+        return vmr_version
+    if isinstance(existing, list):
+        versions = []
+        for version in existing:
+            if version not in versions:
+                versions.append(version)
+        if vmr_version not in versions:
+            versions.append(vmr_version)
+        return versions
+    if existing == vmr_version:
+        return existing
+    return [existing, vmr_version]
+
+
+def compute_always_set_fields(normalized, schema, vmr_version, errors, line_label,
+                              old_doc=None):
+    """0ai/0ah (recomputed every time), 0bg (VMR version), and 0gw
+    (true for records touched by a VMR version). Shared by brand-new
+    insertion, version-diff, and content-update/fill.
 
     0ai (is_refseq) = normalized['source_database'] == 'RefSeq', not
     is_annotated. See SOURCE_DATABASE_KEY/REFSEQ_SOURCE_VALUE above for why."""
@@ -1233,7 +1262,19 @@ def compute_always_set_fields(normalized, schema, vmr_version, errors, line_labe
     else:
         errors.append(f"{line_label}: schema field '{IS_GENBANK_FIELD_ID}' not found")
     if vmr_version:
-        always_set[VMR_VERSION_FIELD] = vmr_version
+        exemplar_entry = schema.get("is_ictv_exemplar")
+        if exemplar_entry:
+            always_set[exemplar_entry["index"]] = True
+        else:
+            errors.append(
+                f"{line_label}: schema field 'is_ictv_exemplar' (0gw) not found"
+            )
+        existing_vmr_versions = (
+            old_doc.get(VMR_VERSION_FIELD) if old_doc is not None else None
+        )
+        always_set[VMR_VERSION_FIELD] = _append_vmr_version(
+            existing_vmr_versions, vmr_version
+        )
     return always_set
 
 
@@ -1257,7 +1298,9 @@ def build_brand_new_insertion(vjid, normalized, resolved_version, sequence,
     acc_index = insdc_entry["index"]
 
     doc = map_normalized_fields(normalized, schema, line_label, errors, warnings)
-    always_set = compute_always_set_fields(normalized, schema, vmr_version, errors, line_label)
+    always_set = compute_always_set_fields(
+        normalized, schema, vmr_version, errors, line_label
+    )
     doc.update(always_set)
 
     doc[VJID_FIELD] = vjid
@@ -1326,7 +1369,9 @@ def build_record_actions(vjid, es_id, old_doc, normalized, resolved_version,
     if isinstance(old_accessions, str):
         old_accessions = [old_accessions]
 
-    always_set = compute_always_set_fields(normalized, schema, vmr_version, errors, line_label)
+    always_set = compute_always_set_fields(
+        normalized, schema, vmr_version, errors, line_label, old_doc
+    )
 
     result = {"event": None, "errors": errors, "warnings": warnings,
               "old_doc_update": None, "new_meta_doc": None,
@@ -1353,6 +1398,7 @@ def build_record_actions(vjid, es_id, old_doc, normalized, resolved_version,
                 acc_index: [resolved_version],
             }
             mapped = map_normalized_fields(normalized, schema, line_label, errors, warnings)
+            preserve_bvbrc_update_date(mapped, old_doc, schema)
             new_doc.update(mapped)
             dk_entry = schema.get("sequence_source")
             if dk_entry and dk_entry["index"] not in new_doc:
@@ -2042,7 +2088,9 @@ def main():
                          help="Path to an array of VMR/ICTV records using the "
                               "'Virus_GENBANK_accession' column. Records are matched "
                               "to FASTA accessions and supported columns are mapped "
-                              "through the configured DB schema. Columns without a "
+                              "through the configured DB schema, including Genome "
+                              "to molecule_type. Existing NCBI update dates are "
+                              "preserved for matched VMR records. Columns without a "
                               "database destination are reported.")
     parser.add_argument("--offline-latest-accession", default=None,
                          help="skip the live ES lookup for the vjid counter seed and start from "

@@ -1,0 +1,330 @@
+VIRJENDB UPSERT POLICIES
+=======================
+
+Purpose
+-------
+This document describes the conditional behavior implemented by
+m.upsert_vjdb.py and vmr_ictv_merge.py, including the requested rules for VMR
+metadata, preservation of existing data, and database updates. Field-by-field
+input mappings and database field indexes are listed in upsert_field_mapping.csv.
+The importer code and config.yml define the mappings and behavior. The schema
+is used at runtime to resolve field IDs to indexes and types, and to cross-check
+those destinations.
+
+1. Inputs and their roles
+-------------------------
+
+IF a FASTA record is provided:
+  - Parse the accession and optional organism, length, and description from
+    the header.
+  - Use the accession to resolve the record through NCBI Datasets.
+  - Use the sequence body for genome_sequences only on a brand-new record or
+    an accession version change.
+  - Normalize the sequence body by removing spaces and converting it to
+    uppercase.
+  - Ignore a legacy vjid in the FASTA header; identify existing records by
+    accession, not by the supplied vjid.
+
+IF --vmr-json is provided:
+  - Parse VMR JSON records and index them by the accessions in
+    Virus_GENBANK_accession.
+  - Match the VMR accessions to FASTA accessions without the version suffix.
+  - Map only the VMR columns listed as mapped in upsert_field_mapping.csv.
+  - Report other VMR columns as having no database destination; do not write
+    them.
+  - IF --vmr-json is not provided, no VMR row is merged.
+
+IF a Datasets virus report exists:
+  - Use the report data and its virus lineage.
+  - Do not fetch the GenBank flat-file fallback.
+
+IF a Datasets virus report does not exist:
+  - Try the GenBank flat-file fallback for organism, length, and country.
+  - If the fallback provides at least one of these values, it can be used and
+    the run warns that taxonomy, host, and isolate data are unavailable from
+    that fallback.
+  - IF neither a report nor any fallback values are available for a brand-new
+    accession, reject that accession rather than inserting a metadata-only
+    stub. A VMR match alone does not bypass this check.
+
+IF an accession cannot be resolved after the configured fetch retries:
+  - Log the resolution failure and skip that accession.
+  - Continue processing other successfully resolved accessions.
+
+2. Source precedence and empty values
+-------------------------------------
+
+For values that can come from more than one input:
+  - FASTA header organism/length values are fallback values.
+  - GenBank flat-file fallback values are used only when there is no Datasets
+    report.
+  - Datasets report values take precedence over FASTA header values.
+  - For a matched VMR row, a non-empty VMR value takes precedence over the
+    Datasets or FASTA value for the same mapped field.
+
+IF an incoming value is empty (None, empty string, or empty list):
+  - Do not map it as a new value.
+  - Do not use it to erase a non-empty value already in the database.
+  - IF a stored field is empty and a non-empty value is supplied, fill it.
+
+IF two matched VMR rows provide different non-empty values for the same field:
+  - Warn and use the first value encountered in the VMR JSON.
+  - IF there are multiple candidate rows and the existing record has an ICTV_ID
+    matching one or more candidates, use the matching row(s).
+  - IF there is no matching ICTV_ID candidate, keep all candidates and apply
+    the first-value rule above.
+
+3. VMR-specific preservation and version rules
+----------------------------------------------
+
+IF an incoming record matches an existing database record:
+  - Never change bvbrc_update_date (0cw) from the incoming NCBI Datasets
+    update_date, regardless of whether the update is RefSeq-only, VMR-backed,
+    or an accession-version change.
+  - Preserve the old 0cw when present; if it is absent, do not populate it
+    from the incoming report.
+
+IF a VMR row matches an existing database record:
+  - Update only VMR-mapped fields that have non-empty values.
+  - For each such field, fill it when the stored value is empty; if it differs
+    from a non-empty stored value, replace it in a new metadata version and
+    include it in the content-update change log.
+  - Preserve every other existing field not explicitly changed by an incoming
+    value or a special control-field rule.
+
+IF an incoming record is associated with a VMR version:
+  - Set is_ictv_exemplar (0gw) to true, regardless of the VMR
+    Exemplar_or_additional_isolate value.
+  - Append the VMR version to 0bg on existing records according to the
+    version-preservation rules below.
+
+IF an incoming record matches a VMR row:
+  - Set is_ictv_exemplar (0gw) to true even when no VMR version was supplied.
+
+IF a VMR row contains Genome:
+  - Map it to molecule_type (database index 0an).
+  - Apply the standard fill-or-replace rules above.
+
+IF a VMR version is supplied by --vmr-version or derived from the FASTA
+filename:
+  - On a brand-new record, write that version to ictv_vmr_version (0bg).
+  - On an existing record, preserve prior value(s), append the new version
+    only if it is not already present, and remove duplicate entries from an
+    existing list.
+  - IF the old value is a scalar and the new version differs, store a list
+    containing the old and new values.
+  - IF the new version is already present, do not add another copy.
+  - IF no VMR version is available, do not set or append 0bg.
+  - Adding a 0bg value does not by itself create a content-update change-log
+    entry. Other reasons for a new metadata version can still create an event.
+
+For ordinary field comparisons:
+  - Compare values exactly, except fields listed in the configured
+    case_insensitive_fields setting.
+  - For a configured case-insensitive field, ignore differences that are only
+    whitespace or letter casing.
+
+4. NCBI lineage rules
+---------------------
+
+IF the Datasets report contains virus.lineage:
+  - Build lineage_names_ncbi (0gu) from the virus lineage names in their
+    reported order.
+  - Build lineage_ids_ncbi (0gt) from the virus lineage tax IDs in their
+    reported order.
+  - Derive the configured NCBI rank fields from virus lineage names using the
+    suffix rules in config.yml.
+  - Derive species_ncbi from the last virus-lineage name not already assigned
+    to another configured rank.
+  - Apply the standard fill-or-replace update rules to these fields.
+
+IF the report contains host.lineage:
+  - Do not put that lineage in the virus lineage fields 0gu or 0gt.
+  - Do not use host lineage names to derive virus taxonomic ranks.
+  - Host-specific fields such as host species and host tax ID are separate
+    report mappings; see the CSV for their destinations and schema status.
+
+5. Accession matching and record classification
+-----------------------------------------------
+
+Before lookup:
+  - Trim whitespace and uppercase accessions.
+  - Use the base accession without its version suffix for matching.
+  - Match against the database's INSDC accession (0aa) and active-record flag
+    (0hd), including versioned database accession values.
+
+IF an active record is found and the resolved accession version differs from
+the stored accession version:
+  - Classify as version-diff.
+
+ELSE IF an active record is found and one or more non-empty incoming field
+values differ from stored values:
+  - Classify as content-update.
+
+ELSE IF an active record is found and the only changes are filling empty
+fields or applying special always-set/default rules:
+  - Classify as insertion (fill-only); update the current record in place and
+    do not increment its metadata version.
+  - The current code prepares 0ai and 0ah as always-set values (and 0bg when
+    a VMR version is supplied), so this path can issue an in-place update even
+    when those values already equal the stored values.
+
+ELSE IF an active record is found and there is nothing to fill or change:
+  - Classify as no-change and write nothing for that record. This occurs only
+    when the fill-only path has no fields to write, including no always-set
+    fields.
+
+ELSE IF no active record is found:
+  - Classify as brand-new insertion, subject to the NCBI report/fallback
+    eligibility rule in section 1.
+
+6. Actions for each event
+-------------------------
+
+Brand-new insertion:
+  - Mint the next vjid from the latest vjid found across the metadata and
+    genome indexes, unless the offline counter override is used.
+  - Create metadata version 1 and sequence version 1.
+  - Mark the new metadata record active and set its insertion and update dates.
+  - If a FASTA sequence is present, prepare a genome_sequences document with
+    accession, vjid, sequence version, normalized sequence, and SHA-256 hash.
+  - Do not create a change-log document for a brand-new insertion.
+  - IF a sequence is present, write the genome document first and write its
+    metadata only after the genome write succeeds.
+  - IF the sequence is absent but metadata is otherwise eligible, warn and
+    write the metadata without a genome document.
+
+Version-diff:
+  - Keep the existing vjid.
+  - Increment metadata version and sequence version.
+  - Create a new active metadata document with the resolved accession version;
+    deactivate the old metadata document.
+  - Create a change-log document describing the old and new accession values.
+  - IF a sequence is present, write the genome document first; only after that
+    write succeeds, deactivate the old metadata document and write the new
+    metadata and change log.
+  - IF the sequence is absent, warn and do not write a genome document. The
+    current code still prepares the metadata version change and change log
+    without genome-write gating in this case.
+
+Content-update:
+  - Keep the existing vjid.
+  - Increment metadata version, create a new active metadata document, and
+    deactivate the old metadata document.
+  - Include changed fields in a change-log document.
+  - Do not write a genome sequence for a same-accession-version metadata
+    update.
+
+Fill-only insertion:
+  - Update the existing document in place with non-empty values for empty
+    fields and any required special fields.
+  - Do not increment metadata version and do not create a change-log document.
+
+No-change:
+  - Do not write metadata, genome sequence, or change-log documents.
+
+7. Special metadata fields
+--------------------------
+
+IF source_database is "RefSeq":
+  - Set is_refseq_sequence (0ai) to true.
+ELSE:
+  - Set 0ai to false.
+  - This is recomputed, not appended.
+
+For is_genbank_sequence (0ah):
+  - Set it to true when building a new metadata document.
+
+For sequence_source (0dk):
+  - Use the configured GenBank marker, not the raw Datasets source_database
+    text.
+  - On an existing same-version record, append GenBank only if it is not
+    already present.
+  - On a new document or accession version-diff, set GenBank if the field is
+    otherwise absent. A version-diff builds a fresh document and does not
+    carry forward other prior 0dk values.
+
+For is_bvbrc_sequence (0cd), is_unique_representative (0hj), and
+is_cluster_representative (0hl):
+  - IF missing on a document being written and no value is supplied, default
+    to false.
+  - ELSE preserve the supplied or existing value.
+
+For the VirJenDB update date (0fh):
+  - Write the UTC calendar date in YYYY-MM-DD format on new metadata versions.
+  - IF an existing record receives only a fill-only update, leave its current
+    update date unchanged.
+
+For insertion_date (0fg):
+  - Set it on a brand-new record.
+  - IF it is missing from an existing record, fill it.
+  - ELSE never replace its existing value.
+
+8. Change-log rules and time format
+-----------------------------------
+
+IF a content-update occurs:
+  - Write a change-log document with vjid, new metadata version, time, method,
+    reason, and changed field entries.
+  - Use the configured content_update method and reason.
+
+IF an accession version-diff occurs:
+  - Write a change-log document with the old/new accession values.
+  - Use the configured version_change method and reason.
+
+IF there is a brand-new insertion or fill-only insertion:
+  - Do not write a change-log document.
+
+For change_log.time:
+  - The code calls datetime.now(timezone.utc).isoformat(timespec="microseconds")
+    and replaces "+00:00" with "Z".
+  - Therefore it is a UTC ISO-8601 timestamp with six fractional-second
+    digits, for example 2026-11-06T09:00:00.123456Z. It is not a date-only
+    value.
+  - This differs from metadata 0fh, which is YYYY-MM-DD.
+
+For the change-log "changes" array:
+  - Record the old and new JSON-serialized values for fields that change.
+  - The 0bg VMR-version append is not added to this array by itself.
+  - A 0dk GenBank append on an existing record is treated as a field change.
+
+9. Error, safety, and commit behavior
+------------------------------------
+
+IF --commit is not supplied:
+  - Run the pipeline in dry-run mode and do not write database changes.
+
+IF the dry run has hard errors:
+  - Abort before writing any database changes.
+
+IF a mapped non-empty field cannot be resolved through the configured schema:
+  - Report a mapping error; do not silently claim the value was written.
+  - For a VMR field whose configured schema ID is absent, warn and omit that
+    VMR value.
+
+IF a genome document for a brand-new insertion or version-diff is too large
+for the configured byte limit:
+  - Skip that record's genome document and its genome-gated metadata/change-log
+    actions for the run; retain the reserved vjid for retry.
+
+IF a genome bulk write fails or its response cannot be safely matched to the
+records:
+  - Do not release that record's genome-gated metadata or change-log writes.
+  - Other successful records may proceed.
+
+The importer does not delete database records as part of these policies.
+Field replacements create a new metadata version and deactivate the old
+version; they do not erase unrelated fields from the old document.
+
+10. Inputs not consumed by this upsert
+--------------------------------------
+
+IF MSL.xlsx or converted_files/MSL.json is provided or present in the
+repository:
+  - This upsert script does not read it and does not write its contents.
+
+IF a VMR column is not listed as mapped in vmr_ictv_merge.py:
+  - Report it as unrecognized and do not write it. The field-by-field CSV
+    enumerates the current VMR columns, including unrecognized columns.
+
+End of policies
